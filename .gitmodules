@@ -1,0 +1,3 @@
+[submodule "Src/NOMoneStdLib"]
+	path = Src/NOMoneStdLib
+	url = git@github.com:raslanove/NOMone-StdLib.git
