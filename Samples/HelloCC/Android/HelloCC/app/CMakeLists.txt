@@ -13,11 +13,13 @@ cmake_minimum_required(VERSION 3.4.1)
 add_definitions(-DNMAIN=1)
 
 FILE(GLOB             SrcCFiles ../../../Src/*.c)
+FILE(GLOB             NCCCFiles ../../../../../Src/*.c)
 FILE(GLOB StdLibAndroidCPPFiles ../../../../../Src/NOMoneStdLib/Backends/Android/Cpp/*.cpp)
 FILE(GLOB    StdLibCommonCFiles ../../../../../Src/NOMoneStdLib/*.c)
 
 set(SRC
         ${SrcCFiles}
+        ${NCCCFiles}
         ${StdLibAndroidCPPFiles}
         ${StdLibCommonCFiles})
 
