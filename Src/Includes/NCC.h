@@ -15,13 +15,13 @@
 //   anything:        *   or  * followed by something
 
 struct NCC_NodeType {
-    int32_t ROOT_NODE, LITERAL, ANY_OF, LITERALS_RANGE, REPEAT, ITEM, ANYTHING;
+    int32_t ROOT, ACCEPT, LITERAL, ANY_OF, LITERALS_RANGE, REPEAT, ITEM, ANYTHING;
 };
 
 struct NCC_Node {
     int32_t type;
     void *data;
-    int32_t (*match)(const char* text); // Returns match length if matched, 0 if rejected.
+    int32_t (*match)(struct NCC_Node* node, const char* text); // Returns match length if matched, 0 if rejected.
     void (*addChildTree)(struct NCC_Node* node, struct NCC_Node* childTree);
     // delete method ...
 };

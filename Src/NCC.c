@@ -1,5 +1,6 @@
 #include <NCC.h>
 #include <NSystemUtils.h>
+#include <NError.h>
 
 //
 // Rules:
@@ -47,6 +48,44 @@ static void rootNodeAddChildTree(struct NCC_Node* node, struct NCC_Node* childTr
     nodeData->nextNode = childTree;
 }
 
+static int32_t rootNodeMatch(struct NCC_Node* node, const char* text) {
+    struct RootNodeData* nodeData = node->data;
+    int32_t matchLength = nodeData->nextNode->match(nodeData->nextNode, text);
+    return matchLength > 0 ? matchLength-1 : 0; // Delete the one added by the accept node.
+}
+
+static struct NCC_Node* createRootNode() {
+    struct NCC_Node* rootNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
+    rootNode->type = NCC_NodeType.ROOT;
+    rootNode->data = NSystemUtils.malloc(sizeof(struct RootNodeData));
+    rootNode->addChildTree = rootNodeAddChildTree;
+    rootNode->match = rootNodeMatch;
+    return rootNode;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Accept node
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void acceptNodeAddChildTree(struct NCC_Node* node, struct NCC_Node* childTree) {
+    NERROR("NCC.c", "addChildTree() shouldn't be called on an accept node");
+}
+
+static int32_t acceptNodeMatch(struct NCC_Node* node, const char* text) {
+    // Reaching accept node means that the strings matches the rule, even if the string is not over
+    // yet,
+    return 1;
+}
+
+static struct NCC_Node* createAcceptNode() {
+    struct NCC_Node* acceptNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
+    acceptNode->type = NCC_NodeType.ACCEPT;
+    acceptNode->data = 0;
+    acceptNode->addChildTree = acceptNodeAddChildTree;
+    acceptNode->match = acceptNodeMatch;
+    return acceptNode;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Literal node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -61,6 +100,13 @@ static void literalNodeAddChildTree(struct NCC_Node* node, struct NCC_Node* chil
     nodeData->nextNode = childTree;
 }
 
+static int32_t literalNodeMatch(struct NCC_Node* node, const char* text) {
+    struct LiteralNodeData* nodeData = node->data;
+    if (*text != nodeData->literal) return 0;
+    int32_t matchLength = nodeData->nextNode->match(nodeData->nextNode, &text[1]);
+    return matchLength > 0 ? matchLength+1 : 0;
+}
+
 static struct NCC_Node* createLiteralNode(const char* rule, int32_t* in_out_index) {
 
     struct NCC_Node* newNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
@@ -71,6 +117,7 @@ static struct NCC_Node* createLiteralNode(const char* rule, int32_t* in_out_inde
 
     newNode->type = NCC_NodeType.LITERAL;
     newNode->addChildTree = literalNodeAddChildTree;
+    newNode->match = literalNodeMatch;
     newNode->data = nodeData;
 
     nodeData->literal = literal;
@@ -87,7 +134,7 @@ static struct NCC_Node* getNextNode(const char* rule, int32_t* in_out_index) {
 
     switch (currentChar) {
         case 0:
-            return 0;
+            return createAcceptNode();
         case '$':
             break;
         case '[':
@@ -109,26 +156,27 @@ static struct NCC_Node* getNextNode(const char* rule, int32_t* in_out_index) {
 
 struct NCC_Node* NCC_constructRuleTree(const char* rule) {
 
-    struct NCC_Node* rootNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
-    rootNode->data = NSystemUtils.malloc(sizeof(struct RootNodeData));
-    rootNode->addChildTree = rootNodeAddChildTree;
+    struct NCC_Node* rootNode = createRootNode();
 
     struct NCC_Node* lastNode = rootNode;
     struct NCC_Node* currentNode;
     int32_t index=0;
     while ((currentNode = getNextNode(rule, &index))) {
         lastNode->addChildTree(lastNode, currentNode);
+        lastNode = currentNode;
+        if (currentNode->type == NCC_NodeType.ACCEPT) break;
     }
 
     return rootNode;
 }
 
 const struct NCC_NodeType NCC_NodeType = {
-    .ROOT_NODE = 0,
-    .LITERAL = 1,
-    .ANY_OF = 2,
-    .LITERALS_RANGE = 3,
-    .REPEAT = 4,
-    .ITEM = 5,
-    .ANYTHING = 6
+    .ROOT = 0,
+    .ACCEPT = 1,
+    .LITERAL = 2,
+    .ANY_OF = 3,
+    .LITERALS_RANGE = 4,
+    .REPEAT = 5,
+    .ITEM = 6,
+    .ANYTHING = 7
 };

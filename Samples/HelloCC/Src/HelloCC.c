@@ -10,6 +10,7 @@ void NMain() {
     const char* rule = "besm Allah";
     struct NCC_Node* tree = NCC_constructRuleTree(rule);
 
+    NLOGI("Test", "Match length: %d", tree->match(tree, "besm Allah :)"));
     // TODO: delete ...
 
     NError.logAndTerminate();
