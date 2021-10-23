@@ -3,15 +3,28 @@
 
 #include <NCC.h>
 
+void assert(const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength) {
+    struct NCC_Node* tree = NCC_constructRuleTree(rule);
+    if (!tree) {
+        NERROR("HelloCC", "assert(): Couldn't create tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT));
+        return ;
+    }
+
+    int32_t matchLength = tree->match(tree, text);
+    if (shouldMatch && matchLength!=expectedMatchLength) NERROR("HelloCC", "assert(): Match failed. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
+    if (!shouldMatch && matchLength>0) NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
+
+    // TODO: delete tree...
+}
+
 void NMain() {
 
     NSystemUtils.logI("sdf", "besm Allah :)");
 
-    const char* rule = "besm Allah";
-    struct NCC_Node* tree = NCC_constructRuleTree(rule);
+    assert("besm\\ Allah\\ a-z", "besm Allah x", True, 12);
+    assert("besm\\ Allah\\ a-z", "besm Allah 2", False, 0);
+    assert("besm\\ Allah\\ \\a-\\z", "besm Allah x", True, 12);
 
-    NLOGI("Test", "Match length: %d", tree->match(tree, "besm Allah :)"));
-    // TODO: delete ...
-
+    NError.popDestroyAndFreeErrors(0);
     NError.logAndTerminate();
 }
