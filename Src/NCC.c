@@ -5,34 +5,30 @@
 //
 // Rules:
 //   Exact match  :         for             = for
-//   Any of       :         numpadKey       = [0123456789.-+]
-//   Range        :         letter          = [a-zA-Z]
+//   Range        :         smallLetter     = a-z
+//   Or           :         letter          = a-z|A-Z
 //   Repeat       :         name            = A-Za-z^*
-//   Repeat range :         variableName    = [a-zA-Z][a-zA-Z0-9]^0-49
-//   Item         :         coordinates     = {(0-9^1-*,0-9^1-*)}
-//   Repeated item:         coordinatesList = {(0-9^1-*,0-9^1-*)}^*
+//   Sub-rule     :         namesList       = {A-Za-z^*}|{{A-Za-z^*}{,A-Za-z^*}^*}
+//   Repeat range :         identifier      = {a-z|A-Z}{a-z|A-Z|0-9}^0-49
 //   Substitute   :         integer         = 1-90-9^*
 //                          integerPair     = ${integer},${integer}
-//   Or           :         integer         = 1-90-9^*
-//                          decimal         = 0-9^1-*.0-9^1-*
-//                          number          = ${integer}|${decimal}
 //   Anything     :         sentence        = *.
 //
 // Reserved characters (must be escaped):
-//   \ | - [ ] ^ * { } $
+//   \ | - ^ * { } $
 //   Whitespaces must be escaped, otherwise they only serve to resolve ambiguities. For example:
-//     variableName = [a-zA-Z][a-zA-Z0-9]^0-49
+//     identifier = {a-z|A-Z}{a-z|A-Z|0-9}^0-49
 //   Does this mean a letter or a digit repeated from 0 to 49 times? Or is it from 0 to 4 followed
 //   by 9? It's the former. If we need that latter, we use:
-//     variableName = [a-zA-Z][a-zA-Z0-9]^0-4 9
+//     variableName = {a-z|A-Z}{a-z|A-Z|0-9}^0-4 9
 //   The space is ignored. It only serves to clearly indicate that the 9 is separate from the 4.
 //
 // Node types:
 //   literal:         a
-//   anyOf:           [...] or |
+//   or:              |
 //   literals range:  a-z
 //   repeat:          ^*  or ^1-49
-//   item:            ${name} or {rule}
+//   sub-rule:        ${name} or {rule}
 //   anything:        *   or  * followed by something
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -174,9 +170,9 @@ const struct NCC_NodeType NCC_NodeType = {
     .ROOT = 0,
     .ACCEPT = 1,
     .LITERAL = 2,
-    .ANY_OF = 3,
+    .OR = 3,
     .LITERALS_RANGE = 4,
     .REPEAT = 5,
-    .ITEM = 6,
+    .SUB_RULE = 6,
     .ANYTHING = 7
 };

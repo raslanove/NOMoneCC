@@ -7,15 +7,16 @@
 
 #include <NTypes.h>
 
+// Node types:
 //   literal:         a
-//   anyOf:           [...] or |
+//   or:              |
 //   literals range:  a-z
 //   repeat:          ^*  or ^1-49
-//   item:            ${name} or {rule}
+//   sub-rule:        ${name} or {rule}
 //   anything:        *   or  * followed by something
 
 struct NCC_NodeType {
-    int32_t ROOT, ACCEPT, LITERAL, ANY_OF, LITERALS_RANGE, REPEAT, ITEM, ANYTHING;
+    int32_t ROOT, ACCEPT, LITERAL, OR, LITERALS_RANGE, REPEAT, SUB_RULE, ANYTHING;
 };
 
 struct NCC_Node {
