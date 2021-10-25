@@ -26,6 +26,12 @@ void NMain() {
     assert("besm\\ Allah\\ a-z", "besm Allah 2", False, 0);
     assert("besm\\ Allah\\ \\a-\\z", "besm Allah x", True, 12);
 
+    assert("a|b", "a", True, 1);
+    assert("abc|def", "abcef", True, 5);
+    assert("abc|def", "abdef", True, 5);
+    assert("abc|def", "abef", False, 0);
+    assert("a|b|c|d|ef", "cf", True, 2);
+
     NError.popDestroyAndFreeErrors(0);
     NError.logAndTerminate();
 }

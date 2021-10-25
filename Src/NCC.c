@@ -31,6 +31,8 @@
 //   sub-rule:        ${name} or {rule}
 //   anything:        *   or  * followed by something
 
+static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in_out_rule);
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Static methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -44,8 +46,8 @@ struct NCC_Node* NCC_getNextNode    (struct NCC_Node* node) { return node->getNe
 // Generic methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static void             genericSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) { node->previousNode = previousNode; }
-static void             genericSetNextNode    (struct NCC_Node* node, struct NCC_Node*     nextNode) { node->nextNode =         nextNode; }
+static void             genericSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) { if (node->previousNode) node->previousNode->nextNode=0; node->previousNode = previousNode; if (previousNode) previousNode->nextNode = node; }
+static void             genericSetNextNode    (struct NCC_Node* node, struct NCC_Node*     nextNode) { if (node->    nextNode) node->nextNode->previousNode=0; node->nextNode     =     nextNode; if (    nextNode) nextNode->previousNode = node; }
 static struct NCC_Node* genericGetPreviousNode(struct NCC_Node* node) { return node->previousNode; }
 static struct NCC_Node* genericGetNextNode    (struct NCC_Node* node) { return node->    nextNode; }
 
@@ -87,7 +89,7 @@ static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* prev
 
 static int32_t rootNodeMatch(struct NCC_Node* node, const char* text) {
     int32_t matchLength = node->nextNode->match(node->nextNode, text);
-    return matchLength > 0 ? matchLength-1 : 0; // Delete the one added by the accept node.
+    return matchLength > 0 ? matchLength-1 : 0; // Subtract the one added by the accept node.
 }
 
 static struct NCC_Node* createRootNode() {
@@ -133,8 +135,9 @@ static int32_t literalNodeMatch(struct NCC_Node* node, const char* text) {
 
 static struct NCC_Node* createLiteralNode(const char literal) {
     struct LiteralNodeData* nodeData = NSystemUtils.malloc(sizeof(struct LiteralNodeData));
-    nodeData->literal = literal;
     struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERAL, nodeData, literalNodeMatch);
+    nodeData->literal = literal;
+
     // TODO: remove...
     NLOGI("NCC", "Created literal node: %c", literal);
     return node;
@@ -159,6 +162,7 @@ static int32_t literalsRangeNodeMatch(struct NCC_Node* node, const char* text) {
 static struct NCC_Node* createLiteralsRangeNode(char rangeStart, char rangeEnd) {
 
     struct LiteralsRangeNodeData* nodeData = NSystemUtils.malloc(sizeof(struct LiteralsRangeNodeData));
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERALS_RANGE, nodeData, literalsRangeNodeMatch);
     if (rangeStart > rangeEnd) {
         char temp = rangeStart;
         rangeStart = rangeEnd;
@@ -166,8 +170,6 @@ static struct NCC_Node* createLiteralsRangeNode(char rangeStart, char rangeEnd) 
     }
     nodeData->rangeStart = rangeStart;
     nodeData->rangeEnd = rangeEnd;
-
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERALS_RANGE, nodeData, literalsRangeNodeMatch);
 
     // TODO: remove...
     NLOGI("NCC", "Created range literal node: %c-%c", rangeStart, rangeEnd);
@@ -232,7 +234,64 @@ static struct NCC_Node* handleLiteral(const char** in_out_rule) {
 // Or node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// TODO:////
+struct OrNodeData {
+    struct NCC_Node* rhsTree;
+    struct NCC_Node* lhsTree;
+};
+
+static int32_t orNodeMatch(struct NCC_Node* node, const char* text) {
+    struct OrNodeData* nodeData = node->data;
+
+    int32_t rhsMatchLength = nodeData->rhsTree->match(nodeData->rhsTree, text);
+    int32_t lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, text);
+
+    int32_t matchLength = rhsMatchLength > lhsMatchLength ? rhsMatchLength : lhsMatchLength;
+    if (!matchLength) return 0;
+
+    return matchLength + node->nextNode->match(node->nextNode, &text[matchLength]);
+}
+
+static void orNodeDeleteTree(struct NCC_Node* tree) {
+    struct OrNodeData* nodeData = tree->data;
+    nodeData->rhsTree->deleteTree(nodeData->rhsTree);
+    nodeData->lhsTree->deleteTree(nodeData->lhsTree);
+    if (tree->nextNode) tree->nextNode->deleteTree(tree->nextNode);
+    NSystemUtils.free(tree->data);
+    NSystemUtils.free(tree);
+}
+
+static struct NCC_Node* createOrNode(struct NCC_Node* parentNode, const char** in_out_rule) {
+    struct OrNodeData* nodeData = NSystemUtils.malloc(sizeof(struct LiteralNodeData));
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.OR, nodeData, orNodeMatch);
+    node->deleteTree = orNodeDeleteTree;
+
+    // Remove parent from the grand-parent and attach this node instead,
+    struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
+    grandParentNode->setNextNode(grandParentNode, node);
+
+    // Turn parent node into a tree and attach it as the lhs node,
+    nodeData->lhsTree = createRootNode();
+    nodeData->lhsTree->setNextNode(nodeData->lhsTree, parentNode);
+    parentNode->setNextNode(parentNode, createAcceptNode());
+
+    // Create a new tree for the next node and set it as the rhs,
+    nodeData->rhsTree = createRootNode();
+    const char* remainingSubRule = ++(*in_out_rule); // Skip the '|'.
+    if (!**in_out_rule) {
+        NERROR("NCC", "createOrNode(): %s|%s can't come at the end of a rule/sub-rule", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        return 0; // Since this node is already attached to the tree, it gets cleaned up automatically.
+    }
+    struct NCC_Node* rhsNode = getNextNode(nodeData->rhsTree, in_out_rule);
+    if (!rhsNode) {
+        NERROR("NCC", "createOrNode(): couldn't create an rhs node: %s%s%s", NTCOLOR(HIGHLIGHT), remainingSubRule, NTCOLOR(STREAM_DEFAULT));
+        return 0; // Since this node is already attached to the tree, it gets cleaned up automatically.
+    }
+    rhsNode->setNextNode(rhsNode, createAcceptNode());
+
+    // TODO: remove...
+    NLOGI("NCC", "Created or node: %s|%s%s", NTCOLOR(HIGHLIGHT), remainingSubRule, NTCOLOR(STREAM_DEFAULT));
+    return node;
+}
 
 
 
@@ -240,14 +299,16 @@ static struct NCC_Node* handleLiteral(const char** in_out_rule) {
 
 
 
-static struct NCC_Node* getNextNode(const char** in_out_rule) {
+static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in_out_rule) {
 
     char currentChar;
     while ((currentChar = **in_out_rule) == ' ') (*in_out_rule)++;
 
+    struct NCC_Node* node;
     switch (currentChar) {
         case 0:
-            return createAcceptNode();
+            node = createAcceptNode();
+            break;
         case '$':
             break;
         case '*':
@@ -257,38 +318,36 @@ static struct NCC_Node* getNextNode(const char** in_out_rule) {
         case '^':
             break;
         case '|':
-            break;
+            node = createOrNode(parentNode, in_out_rule); break;
         case '-':
             NERROR("NCC", "getNextNode(): a '%s-%s' must always be preceded by a literal", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
             return 0;
         default: {
-            return handleLiteral(in_out_rule);
+            node = handleLiteral(in_out_rule); break;
         }
     }
+
+    // Only "Or" nodes attach themselves,
+    if (node && node->type != NCC_NodeType.OR) parentNode->setNextNode(parentNode, node);
+
+    return node;
 }
 
 struct NCC_Node* NCC_constructRuleTree(const char* rule) {
 
     struct NCC_Node* rootNode = createRootNode();
-    struct NCC_Node* lastNode = rootNode;
-    struct NCC_Node* currentNode;
-    const char* remainingSubRule = rule;
 
+    struct NCC_Node* currentNode = rootNode;
+    const char* remainingSubRule = rule;
     int32_t errorsBeginning = NError.observeErrors();
     do {
-        currentNode = getNextNode(&remainingSubRule);
-        if (NError.observeErrors()>errorsBeginning) goto failureCleanup;
-        if (!currentNode) break;
-
-        lastNode->setNextNode(lastNode, currentNode);
-        lastNode = currentNode;
-        if (currentNode->type == NCC_NodeType.ACCEPT) break;
+        currentNode = getNextNode(currentNode, &remainingSubRule);
+        if (!currentNode || NError.observeErrors()>errorsBeginning) break;
+        if (currentNode->type == NCC_NodeType.ACCEPT) return rootNode;
     } while (True);
 
-    return rootNode;
-
-failureCleanup:
-    if (rootNode) rootNode->deleteTree(rootNode);
+    // Failed,
+    rootNode->deleteTree(rootNode);
     return 0;
 }
 

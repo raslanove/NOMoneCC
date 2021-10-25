@@ -20,7 +20,6 @@ struct NCC_NodeType {
 };
 
 // Unimplemented nodes:
-//   Or.
 //   Repeat.
 //   Sub-rule.
 //   Anything.
