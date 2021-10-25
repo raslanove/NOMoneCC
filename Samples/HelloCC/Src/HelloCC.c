@@ -15,6 +15,7 @@ void assert(const char* rule, const char* text, boolean shouldMatch, int32_t exp
     if (!shouldMatch && matchLength>0) NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
 
     tree->deleteTree(tree);
+    NLOGI("", "");
 }
 
 void NMain() {

@@ -32,12 +32,22 @@
 //   anything:        *   or  * followed by something
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Static methods
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void             NCC_setPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) { node->setPreviousNode(node, previousNode); }
+void             NCC_setNextNode    (struct NCC_Node* node, struct NCC_Node*     nextNode) { node->setNextNode    (node,     nextNode); }
+struct NCC_Node* NCC_getPreviousNode(struct NCC_Node* node) { return node->getPreviousNode(node); }
+struct NCC_Node* NCC_getNextNode    (struct NCC_Node* node) { return node->getNextNode    (node); }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Generic methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static void genericSetNextNode(struct NCC_Node* node, struct NCC_Node* nextNode) {
-    node->nextNode = nextNode;
-}
+static void             genericSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) { node->previousNode = previousNode; }
+static void             genericSetNextNode    (struct NCC_Node* node, struct NCC_Node*     nextNode) { node->nextNode =         nextNode; }
+static struct NCC_Node* genericGetPreviousNode(struct NCC_Node* node) { return node->previousNode; }
+static struct NCC_Node* genericGetNextNode    (struct NCC_Node* node) { return node->    nextNode; }
 
 static void genericDeleteTreeNoData(struct NCC_Node* tree) {
     if (tree->nextNode) tree->nextNode->deleteTree(tree->nextNode);
@@ -50,9 +60,30 @@ static void genericDeleteTreeWithData(struct NCC_Node* tree) {
     NSystemUtils.free(tree);
 }
 
+static struct NCC_Node* genericCreateNode(int32_t type, void* data, int32_t (*matchMethod)(struct NCC_Node* node, const char* text)) {
+    struct NCC_Node* node = NSystemUtils.malloc(sizeof(struct NCC_Node));
+    node->type = type;
+    node->data = data;
+    node->match = matchMethod;
+
+    node->previousNode = 0;
+    node->nextNode = 0;
+    node->setPreviousNode = genericSetPreviousNode;
+    node->setNextNode     = genericSetNextNode;
+    node->getPreviousNode = genericGetPreviousNode;
+    node->getNextNode     = genericGetNextNode;
+    node->deleteTree      = data ? genericDeleteTreeWithData : genericDeleteTreeNoData;
+
+    return node;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Root node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) {
+    NERROR("NCC.c", "%ssetPreviousNode()%s shouldn't be called on a %sroot%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+}
 
 static int32_t rootNodeMatch(struct NCC_Node* node, const char* text) {
     int32_t matchLength = node->nextNode->match(node->nextNode, text);
@@ -60,14 +91,9 @@ static int32_t rootNodeMatch(struct NCC_Node* node, const char* text) {
 }
 
 static struct NCC_Node* createRootNode() {
-    struct NCC_Node* rootNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
-    rootNode->type = NCC_NodeType.ROOT;
-    rootNode->data = 0;
-    rootNode->nextNode = 0;
-    rootNode->setNextNode = genericSetNextNode;
-    rootNode->match = rootNodeMatch;
-    rootNode->deleteTree = genericDeleteTreeNoData;
-    return rootNode;
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ROOT, 0, rootNodeMatch);
+    node->setPreviousNode = rootNodeSetPreviousNode;
+    return node;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -75,7 +101,7 @@ static struct NCC_Node* createRootNode() {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static void acceptNodeSetNextNode(struct NCC_Node* node, struct NCC_Node* nextNode) {
-    NERROR("NCC.c", "setNextNode() shouldn't be called on an accept node");
+    NERROR("NCC.c", "%ssetNextNode()%s shouldn't be called on an %saccept%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
 }
 
 static int32_t acceptNodeMatch(struct NCC_Node* node, const char* text) {
@@ -85,14 +111,9 @@ static int32_t acceptNodeMatch(struct NCC_Node* node, const char* text) {
 }
 
 static struct NCC_Node* createAcceptNode() {
-    struct NCC_Node* acceptNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
-    acceptNode->type = NCC_NodeType.ACCEPT;
-    acceptNode->data = 0;
-    acceptNode->nextNode = 0;
-    acceptNode->setNextNode = acceptNodeSetNextNode;
-    acceptNode->match = acceptNodeMatch;
-    acceptNode->deleteTree = genericDeleteTreeNoData;
-    return acceptNode;
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ACCEPT, 0, acceptNodeMatch);
+    node->setNextNode = acceptNodeSetNextNode;
+    return node;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -111,22 +132,12 @@ static int32_t literalNodeMatch(struct NCC_Node* node, const char* text) {
 }
 
 static struct NCC_Node* createLiteralNode(const char literal) {
-
-    struct NCC_Node* newNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
     struct LiteralNodeData* nodeData = NSystemUtils.malloc(sizeof(struct LiteralNodeData));
-
-    newNode->type = NCC_NodeType.LITERAL;
-    newNode->data = nodeData;
-    newNode->nextNode = 0;
-    newNode->setNextNode = genericSetNextNode;
-    newNode->match = literalNodeMatch;
-    newNode->deleteTree = genericDeleteTreeWithData;
-
     nodeData->literal = literal;
-
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERAL, nodeData, literalNodeMatch);
+    // TODO: remove...
     NLOGI("NCC", "Created literal node: %c", literal);
-
-    return newNode;
+    return node;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -147,16 +158,7 @@ static int32_t literalsRangeNodeMatch(struct NCC_Node* node, const char* text) {
 
 static struct NCC_Node* createLiteralsRangeNode(char rangeStart, char rangeEnd) {
 
-    struct NCC_Node* newNode = NSystemUtils.malloc(sizeof(struct NCC_Node));
     struct LiteralsRangeNodeData* nodeData = NSystemUtils.malloc(sizeof(struct LiteralsRangeNodeData));
-
-    newNode->type = NCC_NodeType.LITERAL;
-    newNode->data = nodeData;
-    newNode->nextNode = 0;
-    newNode->setNextNode = genericSetNextNode;
-    newNode->match = literalsRangeNodeMatch;
-    newNode->deleteTree = genericDeleteTreeWithData;
-
     if (rangeStart > rangeEnd) {
         char temp = rangeStart;
         rangeStart = rangeEnd;
@@ -165,9 +167,11 @@ static struct NCC_Node* createLiteralsRangeNode(char rangeStart, char rangeEnd) 
     nodeData->rangeStart = rangeStart;
     nodeData->rangeEnd = rangeEnd;
 
-    NLOGI("NCC", "Created range literal node: %c-%c", rangeStart, rangeEnd);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERALS_RANGE, nodeData, literalsRangeNodeMatch);
 
-    return newNode;
+    // TODO: remove...
+    NLOGI("NCC", "Created range literal node: %c-%c", rangeStart, rangeEnd);
+    return node;
 }
 
 static boolean isReserved(const char literal) {
@@ -223,6 +227,15 @@ static struct NCC_Node* handleLiteral(const char** in_out_rule) {
         return createLiteralNode(literal);
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Or node
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// TODO:////
+
+
+
 
 
 
