@@ -22,9 +22,10 @@ struct NCC_NodeType {
 struct NCC_Node {
     int32_t type;
     void *data;
+    struct NCC_Node* nextNode;
     int32_t (*match)(struct NCC_Node* node, const char* text); // Returns match length if matched, 0 if rejected.
-    void (*addChildTree)(struct NCC_Node* node, struct NCC_Node* childTree);
-    // delete method ...
+    void (*setNextNode)(struct NCC_Node* node, struct NCC_Node* nextNode);
+    void (*deleteTree)(struct NCC_Node* tree);
 };
 
 struct NCC_Node* NCC_constructRuleTree(const char* rule);

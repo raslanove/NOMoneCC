@@ -6,7 +6,7 @@
 void assert(const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength) {
     struct NCC_Node* tree = NCC_constructRuleTree(rule);
     if (!tree) {
-        NERROR("HelloCC", "assert(): Couldn't create tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT));
+        NERROR("HelloCC", "Couldn't create tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT));
         return ;
     }
 
@@ -14,7 +14,7 @@ void assert(const char* rule, const char* text, boolean shouldMatch, int32_t exp
     if (shouldMatch && matchLength!=expectedMatchLength) NERROR("HelloCC", "assert(): Match failed. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
     if (!shouldMatch && matchLength>0) NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
 
-    // TODO: delete tree...
+    tree->deleteTree(tree);
 }
 
 void NMain() {
