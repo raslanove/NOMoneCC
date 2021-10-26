@@ -37,6 +37,7 @@ void NMain() {
     assert("ab{cd}|{ef}gh", "abefgh", True, 6);
     assert("ab{cd}|{ef}gh", "abgh", False, 0);
     assert("a{a|b}", "ab", True, 2);
+    assert("a{b|c}d", "abf", False, 0);
 
     NError.popDestroyAndFreeErrors(0);
     NError.logAndTerminate();

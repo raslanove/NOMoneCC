@@ -84,6 +84,8 @@ static struct NCC_Node* genericCreateNode(int32_t type, void* data, int32_t (*ma
 // Root node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// TODO: root node should contain variables record, which should be passed to every node while matching...
+
 static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) {
     NERROR("NCC.c", "%ssetPreviousNode()%s shouldn't be called on a %sroot%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
 }
@@ -247,9 +249,10 @@ static int32_t orNodeMatch(struct NCC_Node* node, const char* text) {
     int32_t lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, text);
 
     int32_t matchLength = rhsMatchLength > lhsMatchLength ? rhsMatchLength : lhsMatchLength;
-    if (!matchLength) return 0;
 
-    return matchLength + node->nextNode->match(node->nextNode, &text[matchLength]);
+    if (!matchLength) return 0;
+    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, &text[matchLength]);
+    return nextNodeMatchLength ? matchLength + nextNodeMatchLength : 0;
 }
 
 static void orNodeDeleteTree(struct NCC_Node* tree) {
@@ -314,7 +317,9 @@ static int32_t subRuleNodeMatch(struct NCC_Node* node, const char* text) {
     struct SubRuleNodeData* nodeData = node->data;
 
     int32_t matchLength = nodeData->subRuleTree->match(nodeData->subRuleTree, text);
-    return matchLength ? matchLength + node->nextNode->match(node->nextNode, &text[matchLength]) : 0;
+    if (!matchLength) return 0;
+    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, &text[matchLength]);
+    return nextNodeMatchLength ? matchLength + nextNodeMatchLength : 0;
 }
 
 static void subRuleNodeDeleteTree(struct NCC_Node* tree) {
