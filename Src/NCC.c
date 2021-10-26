@@ -1,6 +1,7 @@
 #include <NCC.h>
 #include <NSystemUtils.h>
 #include <NError.h>
+#include <NByteVector.h>
 
 //
 // Rules:
@@ -261,12 +262,20 @@ static void orNodeDeleteTree(struct NCC_Node* tree) {
 }
 
 static struct NCC_Node* createOrNode(struct NCC_Node* parentNode, const char** in_out_rule) {
-    struct OrNodeData* nodeData = NSystemUtils.malloc(sizeof(struct LiteralNodeData));
+
+    // Get grand-parent node,
+    struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
+    if (!grandParentNode) {
+        NERROR("NCC", "createOrNode(): %s|%s can't come at the beginning of a rule/sub-rule", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+
+    // Create node,
+    struct OrNodeData* nodeData = NSystemUtils.malloc(sizeof(struct OrNodeData));
     struct NCC_Node* node = genericCreateNode(NCC_NodeType.OR, nodeData, orNodeMatch);
     node->deleteTree = orNodeDeleteTree;
 
     // Remove parent from the grand-parent and attach this node instead,
-    struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
     grandParentNode->setNextNode(grandParentNode, node);
 
     // Turn parent node into a tree and attach it as the lhs node,
@@ -293,6 +302,88 @@ static struct NCC_Node* createOrNode(struct NCC_Node* parentNode, const char** i
     return node;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Sub-rule node
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct SubRuleNodeData {
+    struct NCC_Node* subRuleTree;
+};
+
+static int32_t subRuleNodeMatch(struct NCC_Node* node, const char* text) {
+    struct SubRuleNodeData* nodeData = node->data;
+
+    int32_t matchLength = nodeData->subRuleTree->match(nodeData->subRuleTree, text);
+    return matchLength ? matchLength + node->nextNode->match(node->nextNode, &text[matchLength]) : 0;
+}
+
+static void subRuleNodeDeleteTree(struct NCC_Node* tree) {
+    struct SubRuleNodeData* nodeData = tree->data;
+    nodeData->subRuleTree->deleteTree(nodeData->subRuleTree);
+    if (tree->nextNode) tree->nextNode->deleteTree(tree->nextNode);
+    NSystemUtils.free(tree->data);
+    NSystemUtils.free(tree);
+}
+
+static struct NCC_Node* createSubRuleNode(const char** in_out_rule) {
+
+    // Skip the '{'.
+    const char* subRuleBeginning = (*in_out_rule)++;
+
+    // Find the matching closing braces,
+    struct NByteVector subRule;
+    NByteVector.create(2, &subRule);
+    int32_t closingBracesRequired=1;
+    boolean subRuleComplete=False;
+    for (int32_t i=0;; i++) {
+        char currentChar = ((*in_out_rule)++)[0];
+        if (currentChar=='{') {
+            closingBracesRequired++;
+        } else if (currentChar=='}') {
+            if (!--closingBracesRequired) {
+                subRuleComplete = True;
+                break;
+            }
+        } else if (!currentChar) {
+            break;
+        }
+        NByteVector.pushBack(&subRule, currentChar);
+    }
+    NByteVector.pushBack(&subRule, 0);
+
+    // Make sure the sub-rule is well-formed,
+    if (!NByteVector.size(&subRule)) {
+        NERROR("NCC", "createSubRuleNode(): can't have empty sub-rules %s{}%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        goto malformedSubRuleExit;
+    }
+    if (!subRuleComplete) {
+        NERROR("NCC", "createSubRuleNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), subRuleBeginning, NTCOLOR(STREAM_DEFAULT));
+        goto malformedSubRuleExit;
+    }
+
+    // Create sub-rule tree,
+    struct NCC_Node* subRuleTree = NCC_constructRuleTree(subRule.objects);
+    if (!subRuleTree) {
+        NERROR("NCC", "createSubRuleNode(): couldn't create sub-rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), subRuleBeginning, NTCOLOR(STREAM_DEFAULT));
+        goto  malformedSubRuleExit;
+    }
+
+    // Create the sub-rule node,
+    struct SubRuleNodeData* nodeData = NSystemUtils.malloc(sizeof(struct SubRuleNodeData));
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.SUB_RULE, nodeData, subRuleNodeMatch);
+    node->deleteTree = subRuleNodeDeleteTree;
+    nodeData->subRuleTree = subRuleTree;
+
+    // TODO: remove...
+    NLOGI("NCC", "Created sub-rule node: %s{%s}%s", NTCOLOR(HIGHLIGHT), subRule.objects, NTCOLOR(STREAM_DEFAULT));
+    NByteVector.destroy(&subRule);
+
+    return node;
+
+malformedSubRuleExit:
+    NByteVector.destroy(&subRule);
+    return 0;
+}
 
 
 
@@ -314,7 +405,7 @@ static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in
         case '*':
             break;
         case '{':
-            break;
+            node = createSubRuleNode(in_out_rule); break;
         case '^':
             break;
         case '|':
@@ -359,5 +450,6 @@ const struct NCC_NodeType NCC_NodeType = {
     .LITERALS_RANGE = 4,
     .REPEAT = 5,
     .SUB_RULE = 6,
-    .ANYTHING = 7
+    .SUBSTITUTE = 7,
+    .ANYTHING = 8
 };

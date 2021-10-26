@@ -16,14 +16,17 @@
 //   anything:        *   or  * followed by something
 
 struct NCC_NodeType {
-    int32_t ROOT, ACCEPT, LITERAL, OR, LITERALS_RANGE, REPEAT, SUB_RULE, ANYTHING;
+    int32_t ROOT, ACCEPT, LITERAL, OR, LITERALS_RANGE, REPEAT, SUB_RULE, SUBSTITUTE, ANYTHING;
 };
 
 // Unimplemented nodes:
 //   Repeat.
-//   Sub-rule.
+//   Substitute.
 //   Anything.
 
+
+// TODO: add an NVector<NCC_Node*> for the match log and a visit counter in every node. This 
+// marks the correct match path, and can be followed later to do the code generation...
 struct NCC_Node {
     int32_t type;
     void *data;
