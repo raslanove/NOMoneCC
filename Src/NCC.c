@@ -91,8 +91,7 @@ static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* prev
 }
 
 static int32_t rootNodeMatch(struct NCC_Node* node, const char* text) {
-    int32_t matchLength = node->nextNode->match(node->nextNode, text);
-    return matchLength > 0 ? matchLength-1 : 0; // Subtract the one added by the accept node.
+    return node->nextNode->match(node->nextNode, text);
 }
 
 static struct NCC_Node* createRootNode() {
@@ -112,7 +111,7 @@ static void acceptNodeSetNextNode(struct NCC_Node* node, struct NCC_Node* nextNo
 static int32_t acceptNodeMatch(struct NCC_Node* node, const char* text) {
     // Reaching accept node means that the strings matches the rule, even if the string is not over
     // yet,
-    return 1;
+    return 0;
 }
 
 static struct NCC_Node* createAcceptNode() {
@@ -131,9 +130,9 @@ struct LiteralNodeData {
 
 static int32_t literalNodeMatch(struct NCC_Node* node, const char* text) {
     struct LiteralNodeData* nodeData = node->data;
-    if (*text != nodeData->literal) return 0;
+    if (*text != nodeData->literal) return -1;
     int32_t matchLength = node->nextNode->match(node->nextNode, &text[1]);
-    return matchLength > 0 ? matchLength+1 : 0;
+    return matchLength!=-1 ? matchLength+1 : -1;
 }
 
 static struct NCC_Node* createLiteralNode(const char literal) {
@@ -157,9 +156,9 @@ struct LiteralsRangeNodeData {
 static int32_t literalsRangeNodeMatch(struct NCC_Node* node, const char* text) {
     struct LiteralsRangeNodeData* nodeData = node->data;
     char literal = *text;
-    if ((literal < nodeData->rangeStart) || (literal > nodeData->rangeEnd)) return 0;
+    if ((literal < nodeData->rangeStart) || (literal > nodeData->rangeEnd)) return -1;
     int32_t matchLength = node->nextNode->match(node->nextNode, &text[1]);
-    return matchLength > 0 ? matchLength+1 : 0;
+    return matchLength!=-1 ? matchLength+1 : -1;
 }
 
 static struct NCC_Node* createLiteralsRangeNode(char rangeStart, char rangeEnd) {
@@ -249,10 +248,10 @@ static int32_t orNodeMatch(struct NCC_Node* node, const char* text) {
     int32_t lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, text);
 
     int32_t matchLength = rhsMatchLength > lhsMatchLength ? rhsMatchLength : lhsMatchLength;
+    if (matchLength==-1) return -1;
 
-    if (!matchLength) return 0;
     int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, &text[matchLength]);
-    return nextNodeMatchLength ? matchLength + nextNodeMatchLength : 0;
+    return nextNodeMatchLength!=-1 ? matchLength + nextNodeMatchLength : -1;
 }
 
 static void orNodeDeleteTree(struct NCC_Node* tree) {
@@ -317,9 +316,10 @@ static int32_t subRuleNodeMatch(struct NCC_Node* node, const char* text) {
     struct SubRuleNodeData* nodeData = node->data;
 
     int32_t matchLength = nodeData->subRuleTree->match(nodeData->subRuleTree, text);
-    if (!matchLength) return 0;
+    if (matchLength==-1) return -1;
+
     int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, &text[matchLength]);
-    return nextNodeMatchLength ? matchLength + nextNodeMatchLength : 0;
+    return nextNodeMatchLength!=-1 ? matchLength + nextNodeMatchLength : -1;
 }
 
 static void subRuleNodeDeleteTree(struct NCC_Node* tree) {
