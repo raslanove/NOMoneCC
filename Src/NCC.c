@@ -28,7 +28,7 @@
 //   literal:         a
 //   or:              |
 //   literals range:  a-z
-//   repeat:          ^*  or ^1-49
+//   repeat:          ^*  or ^1-49 or ^?
 //   sub-rule:        ${name} or {rule}
 //   anything:        *   or  * followed by something
 
@@ -84,7 +84,8 @@ static struct NCC_Node* genericCreateNode(int32_t type, void* data, int32_t (*ma
 // Root node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// TODO: root node should contain variables record, which should be passed to every node while matching...
+// TODO: a variables record should be passed to every node while matching. Each variable should have a rule, and a vector
+// representing a stack of its values...
 
 static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) {
     NERROR("NCC.c", "%ssetPreviousNode()%s shouldn't be called on a %sroot%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
@@ -390,6 +391,90 @@ malformedSubRuleExit:
     return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Repeat node
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct RepeatNodeData {
+    struct NCC_Node* repeatedNode;
+    struct NCC_Node* followingSubRule;
+};
+
+static int32_t repeatNodeMatch(struct NCC_Node* node, const char* text) {
+    struct RepeatNodeData* nodeData = node->data;
+
+    int32_t totalMatchLength=0;
+    do {
+        // Check if the following sub-rule matches,
+        // TODO: should reset the following sub-rule first...
+        int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, &text[totalMatchLength]);
+        if (followingSubRuleMatchLength>0) return totalMatchLength + followingSubRuleMatchLength;
+
+        // Following sub-rule didn't match, attempt repeating,
+        int32_t matchLength = nodeData->repeatedNode->match(nodeData->repeatedNode, &text[totalMatchLength]);
+        if (matchLength<1) return followingSubRuleMatchLength==0 ? totalMatchLength : -1;
+        totalMatchLength += matchLength;
+    } while (True);
+}
+
+static void repeatNodeDeleteTree(struct NCC_Node* tree) {
+    struct RepeatNodeData* nodeData = tree->data;
+    nodeData->repeatedNode->deleteTree(nodeData->repeatedNode);
+    nodeData->followingSubRule->deleteTree(nodeData->followingSubRule);
+    if (tree->nextNode) tree->nextNode->deleteTree(tree->nextNode);
+    NSystemUtils.free(tree->data);
+    NSystemUtils.free(tree);
+}
+
+static struct NCC_Node* createRepeatNode(struct NCC_Node* parentNode, const char** in_out_rule) {
+
+    // Get grand-parent node,
+    struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
+    if (!grandParentNode) {
+        NERROR("NCC", "createRepeatNode(): %s^%s can't come at the beginning of a rule/sub-rule", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+
+    // Parse the ^ expression,
+    char repeatCount = (++(*in_out_rule))[0];
+    // TODO: for now, we only support *.
+    if (repeatCount != '*') {
+        NERROR("NCC", "createRepeatNode(): expecting %s*%s after %s^%s, found %s%c%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), repeatCount, NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    } else {
+        // Skip the *,
+        (*in_out_rule)++;
+    }
+
+    // Create node,
+    struct RepeatNodeData* nodeData = NSystemUtils.malloc(sizeof(struct RepeatNodeData));
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.REPEAT, nodeData, repeatNodeMatch);
+    node->deleteTree = repeatNodeDeleteTree;
+
+    // Remove parent from the grand-parent and attach this node instead,
+    grandParentNode->setNextNode(grandParentNode, node);
+
+    // Turn parent node into a tree and attach it as the repeated node,
+    nodeData->repeatedNode = createRootNode();
+    nodeData->repeatedNode->setNextNode(nodeData->repeatedNode, parentNode);
+    parentNode->setNextNode(parentNode, createAcceptNode());
+
+    // Create a new tree for the remaining text and set it as the following sub-rule,
+    nodeData->followingSubRule = NCC_constructRuleTree(*in_out_rule);
+    if (!nodeData->followingSubRule) {
+        NERROR("NCC", "createRepeatNode(): Couldn't create tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
+        return 0;  // Since this node is already attached to the tree, it gets cleaned up automatically.
+    }
+
+    // TODO: remove...
+    NLOGI("NCC", "Created repeat node: %s^*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
+    return node;
+}
+
+
+
+
+
 
 
 
@@ -412,7 +497,7 @@ static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in
         case '{':
             node = createSubRuleNode(in_out_rule); break;
         case '^':
-            break;
+            node = createRepeatNode(parentNode, in_out_rule); break;
         case '|':
             node = createOrNode(parentNode, in_out_rule); break;
         case '-':
@@ -423,8 +508,8 @@ static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in
         }
     }
 
-    // Only "Or" nodes attach themselves,
-    if (node && node->type != NCC_NodeType.OR) parentNode->setNextNode(parentNode, node);
+    // Only "Or" and "Repeat" nodes attach themselves,
+    if (node && (node->type!=NCC_NodeType.OR) && (node->type!=NCC_NodeType.REPEAT)) parentNode->setNextNode(parentNode, node);
 
     return node;
 }

@@ -39,6 +39,15 @@ void NMain() {
     assert("a{a|b}", "ab", True, 2);
     assert("a{b|c}d", "abf", False, 0);
 
+    assert("a^*bc", "abc", True, 3);
+    assert("a^*bc", "bc", True, 2);
+    assert("a^*bc", "aaaaabc", True, 7);
+    assert("a^*", "aaaaa", True, 5);
+    assert("123a^*", "123aaaaa", True, 8);
+    assert("123a^*456", "123a456", True, 7);
+    assert("123a^*456", "123456", True, 6);
+    assert("123{ab}^*456", "123ababab456", True, 12);
+
     NError.popDestroyAndFreeErrors(0);
     NError.logAndTerminate();
 }
