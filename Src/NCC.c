@@ -10,7 +10,6 @@
 //   Or            :         letter          = a-z|A-Z
 //   Repeat        :         name            = A-Za-z^*
 //   Sub-rule      :         namesList       = {A-Za-z^*}|{{A-Za-z^*}{,A-Za-z^*}^*}
-//   Limited repeat:         identifier      = {a-z|A-Z}{a-z|A-Z|0-9}^0-49
 //   Substitute    :         integer         = 1-90-9^*
 //                           integerPair     = ${integer},${integer}
 //   Anything      :         sentence        = *.
@@ -24,11 +23,14 @@
 //     variableName = {a-z|A-Z}{a-z|A-Z|0-9}^0-4 9
 //   The space is ignored. It only serves to clearly indicate that the 9 is separate from the 4.
 //
+//   Note: now that we've removed the support for limited repeat, this ambiguity doesn't exist at all,
+//         still, spaces must still be escaped, for they can be used to make rules look a lot cleaner.
+//
 // Node types:
 //   literal:         a
 //   or:              |
 //   literals range:  a-z
-//   repeat:          ^*  or ^1-49 or ^?
+//   repeat:          ^*
 //   sub-rule:        ${name} or {rule}
 //   anything:        *   or  * followed by something
 
@@ -462,9 +464,12 @@ static struct NCC_Node* createRepeatNode(struct NCC_Node* parentNode, const char
     // Create a new tree for the remaining text and set it as the following sub-rule,
     nodeData->followingSubRule = NCC_constructRuleTree(*in_out_rule);
     if (!nodeData->followingSubRule) {
-        NERROR("NCC", "createRepeatNode(): Couldn't create tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "createRepeatNode(): Couldn't create the following sub-rule tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
         return 0;  // Since this node is already attached to the tree, it gets cleaned up automatically.
     }
+
+    // The remainder of the tree was already added to the following sub-rule, no need to continue parsing,
+    while (**in_out_rule) (*in_out_rule)++;
 
     // TODO: remove...
     NLOGI("NCC", "Created repeat node: %s^*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
@@ -473,6 +478,67 @@ static struct NCC_Node* createRepeatNode(struct NCC_Node* parentNode, const char
 
 
 
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Anything node
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct AnythingNodeData {
+    struct NCC_Node* followingSubRule;
+};
+
+static int32_t anythingNodeMatch(struct NCC_Node* node, const char* text) {
+    struct AnythingNodeData* nodeData = node->data;
+
+    int32_t totalMatchLength=0;
+    do {
+        // Check if the following sub-rule matches,
+        // TODO: should reset the following sub-rule first...
+        int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, &text[totalMatchLength]);
+        if (followingSubRuleMatchLength>0) return totalMatchLength + followingSubRuleMatchLength;
+
+        // Following sub-rule didn't match,
+        // If text ended,
+        if (!text[totalMatchLength]) return followingSubRuleMatchLength==0 ? totalMatchLength : -1;
+
+        // Text didn't end, advance,
+        totalMatchLength++;
+    } while (True);
+}
+
+static void anythingNodeDeleteTree(struct NCC_Node* tree) {
+    struct AnythingNodeData* nodeData = tree->data;
+    nodeData->followingSubRule->deleteTree(nodeData->followingSubRule);
+    if (tree->nextNode) tree->nextNode->deleteTree(tree->nextNode);
+    NSystemUtils.free(tree->data);
+    NSystemUtils.free(tree);
+}
+
+static struct NCC_Node* createAnythingNode(const char** in_out_rule) {
+
+    // Skip the *,
+    (*in_out_rule)++;
+
+    // Create a new tree for the remaining text and set it as the following sub-rule,
+    struct NCC_Node* followingSubRule = NCC_constructRuleTree(*in_out_rule);
+    if (!followingSubRule) {
+        NERROR("NCC", "createAnythingNode(): Couldn't create the remaining sub-rule tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+
+    // Create node,
+    struct AnythingNodeData* nodeData = NSystemUtils.malloc(sizeof(struct AnythingNodeData));
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ANYTHING, nodeData, anythingNodeMatch);
+    node->deleteTree = anythingNodeDeleteTree;
+    nodeData->followingSubRule = followingSubRule;
+
+    // The remainder of the tree was already added to the following sub-rule, no need to continue parsing,
+    while (**in_out_rule) (*in_out_rule)++;
+
+    // TODO: remove...
+    NLOGI("NCC", "Created anything node: %s*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
+    return node;
+}
 
 
 
@@ -493,7 +559,7 @@ static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in
         case '$':
             break;
         case '*':
-            break;
+            node = createAnythingNode(in_out_rule); break;
         case '{':
             node = createSubRuleNode(in_out_rule); break;
         case '^':

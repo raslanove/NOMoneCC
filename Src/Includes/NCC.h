@@ -11,7 +11,7 @@
 //   literal:         a
 //   or:              |
 //   literals range:  a-z
-//   repeat:          ^*  or ^1-49
+//   repeat:          ^*
 //   sub-rule:        {rule}
 //   substitute:      ${name}
 //   anything:        *   or  * followed by something
@@ -21,9 +21,7 @@ struct NCC_NodeType {
 };
 
 // Unimplemented nodes:
-//   Repeat.
 //   Substitute.
-//   Anything.
 
 
 // TODO: add an NVector<NCC_Node*> for the next node log in every node. This

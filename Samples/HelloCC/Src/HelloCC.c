@@ -22,16 +22,19 @@ void NMain() {
 
     NSystemUtils.logI("sdf", "besm Allah :)");
 
+    // x-y
     assert("besm\\ Allah\\ a-z", "besm Allah x", True, 12);
     assert("besm\\ Allah\\ a-z", "besm Allah 2", False, 0);
     assert("besm\\ Allah\\ \\a-\\z", "besm Allah x", True, 12);
 
+    // |
     assert("a|b", "a", True, 1);
     assert("abc|def", "abcef", True, 5);
     assert("abc|def", "abdef", True, 5);
     assert("abc|def", "abef", False, 0);
     assert("a|b|c|d|ef", "cf", True, 2);
 
+    // {}
     assert("ab{cd{ef}gh}ij", "abcdefghij", True, 10);
     assert("ab{cd}|{ef}gh", "abcdgh", True, 6);
     assert("ab{cd}|{ef}gh", "abefgh", True, 6);
@@ -39,6 +42,7 @@ void NMain() {
     assert("a{a|b}", "ab", True, 2);
     assert("a{b|c}d", "abf", False, 0);
 
+    // ^*
     assert("a^*bc", "abc", True, 3);
     assert("a^*bc", "bc", True, 2);
     assert("a^*bc", "aaaaabc", True, 7);
@@ -47,7 +51,22 @@ void NMain() {
     assert("123a^*456", "123a456", True, 7);
     assert("123a^*456", "123456", True, 6);
     assert("123{ab}^*456", "123ababab456", True, 12);
+    assert("{ab}^*{cd}^*", "x", True, 0);
+    assert("x{ab}^*{cd}^*", "x", True, 1);
+    assert("x{ab}^*{cd}^*", "xab", True, 3);
+    assert("x{ab}^*{cd}^*", "xcd", True, 3);
 
-    NError.popDestroyAndFreeErrors(0);
+    // *
+    assert("*", "xyz", True, 3);
+    assert("**", "xyz", True, 3);
+    assert("********", "xyz", True, 3);
+    assert("********abc", "xyzabc", True, 6);
+    assert("*a*b*c*", "__a__c__", False, 0);
+
+    // General test-cases,
+    assert("{a-z|A-Z}{a-z|A-Z|0-9}^*", "myVariable3", True, 11);
+    assert("{a-z|A-Z}{a-z|A-Z|0-9}^*", "3myVariable3", False, 0);
+    assert("/\**\*/", "/*بسم الله. This is a beautiful comment.\n The is the second line in the beautiful comment.*/", True, 99);
+
     NError.logAndTerminate();
 }
