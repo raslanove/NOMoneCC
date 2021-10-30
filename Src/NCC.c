@@ -44,7 +44,7 @@ struct NCC_Node {
     void *data;
     struct NCC_Node* previousNode;
     struct NCC_Node*     nextNode;
-    int32_t (*match)(struct NCC_Node* node, const char* text); // Returns match length if matched, 0 if rejected.
+    int32_t (*match)(struct NCC_Node* node, struct NCC* ncc, const char* text); // Returns match length if matched, 0 if rejected.
     void (*setPreviousNode)(struct NCC_Node* node, struct NCC_Node* previousNode);
     void (*setNextNode    )(struct NCC_Node* node, struct NCC_Node*     nextNode);
     struct NCC_Node* (*getPreviousNode)(struct NCC_Node* node);
@@ -90,7 +90,7 @@ static void genericDeleteTreeWithData(struct NCC_Node* tree) {
     NSystemUtils.free(tree);
 }
 
-static struct NCC_Node* genericCreateNode(int32_t type, void* data, int32_t (*matchMethod)(struct NCC_Node* node, const char* text)) {
+static struct NCC_Node* genericCreateNode(int32_t type, void* data, int32_t (*matchMethod)(struct NCC_Node* node, struct NCC* ncc, const char* text)) {
     struct NCC_Node* node = NSystemUtils.malloc(sizeof(struct NCC_Node));
     node->type = type;
     node->data = data;
@@ -118,8 +118,8 @@ static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* prev
     NERROR("NCC.c", "%ssetPreviousNode()%s shouldn't be called on a %sroot%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
 }
 
-static int32_t rootNodeMatch(struct NCC_Node* node, const char* text) {
-    return node->nextNode->match(node->nextNode, text);
+static int32_t rootNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    return node->nextNode->match(node->nextNode, ncc, text);
 }
 
 static struct NCC_Node* createRootNode() {
@@ -136,7 +136,7 @@ static void acceptNodeSetNextNode(struct NCC_Node* node, struct NCC_Node* nextNo
     NERROR("NCC.c", "%ssetNextNode()%s shouldn't be called on an %saccept%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
 }
 
-static int32_t acceptNodeMatch(struct NCC_Node* node, const char* text) {
+static int32_t acceptNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     // Reaching accept node means that the strings matches the rule, even if the string is not over
     // yet,
     return 0;
@@ -156,10 +156,10 @@ struct LiteralNodeData {
     char literal;
 };
 
-static int32_t literalNodeMatch(struct NCC_Node* node, const char* text) {
+static int32_t literalNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct LiteralNodeData* nodeData = node->data;
     if (*text != nodeData->literal) return -1;
-    int32_t matchLength = node->nextNode->match(node->nextNode, &text[1]);
+    int32_t matchLength = node->nextNode->match(node->nextNode, ncc, &text[1]);
     return matchLength!=-1 ? matchLength+1 : -1;
 }
 
@@ -181,11 +181,11 @@ struct LiteralsRangeNodeData {
     char rangeStart, rangeEnd;
 };
 
-static int32_t literalsRangeNodeMatch(struct NCC_Node* node, const char* text) {
+static int32_t literalsRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct LiteralsRangeNodeData* nodeData = node->data;
     char literal = *text;
     if ((literal < nodeData->rangeStart) || (literal > nodeData->rangeEnd)) return -1;
-    int32_t matchLength = node->nextNode->match(node->nextNode, &text[1]);
+    int32_t matchLength = node->nextNode->match(node->nextNode, ncc, &text[1]);
     return matchLength!=-1 ? matchLength+1 : -1;
 }
 
@@ -269,16 +269,16 @@ struct OrNodeData {
     struct NCC_Node* lhsTree;
 };
 
-static int32_t orNodeMatch(struct NCC_Node* node, const char* text) {
+static int32_t orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct OrNodeData* nodeData = node->data;
 
-    int32_t rhsMatchLength = nodeData->rhsTree->match(nodeData->rhsTree, text);
-    int32_t lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, text);
+    int32_t rhsMatchLength = nodeData->rhsTree->match(nodeData->rhsTree, ncc, text);
+    int32_t lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, ncc, text);
 
     int32_t matchLength = rhsMatchLength > lhsMatchLength ? rhsMatchLength : lhsMatchLength;
     if (matchLength==-1) return -1;
 
-    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, &text[matchLength]);
+    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
     return nextNodeMatchLength!=-1 ? matchLength + nextNodeMatchLength : -1;
 }
 
@@ -340,13 +340,13 @@ struct SubRuleNodeData {
     struct NCC_Node* subRuleTree;
 };
 
-static int32_t subRuleNodeMatch(struct NCC_Node* node, const char* text) {
+static int32_t subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct SubRuleNodeData* nodeData = node->data;
 
-    int32_t matchLength = nodeData->subRuleTree->match(nodeData->subRuleTree, text);
+    int32_t matchLength = nodeData->subRuleTree->match(nodeData->subRuleTree, ncc, text);
     if (matchLength==-1) return -1;
 
-    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, &text[matchLength]);
+    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
     return nextNodeMatchLength!=-1 ? matchLength + nextNodeMatchLength : -1;
 }
 
@@ -427,18 +427,18 @@ struct RepeatNodeData {
     struct NCC_Node* followingSubRule;
 };
 
-static int32_t repeatNodeMatch(struct NCC_Node* node, const char* text) {
+static int32_t repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct RepeatNodeData* nodeData = node->data;
 
     int32_t totalMatchLength=0;
     do {
         // Check if the following sub-rule matches,
         // TODO: should reset the following sub-rule first...
-        int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, &text[totalMatchLength]);
+        int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, &text[totalMatchLength]);
         if (followingSubRuleMatchLength>0) return totalMatchLength + followingSubRuleMatchLength;
 
         // Following sub-rule didn't match, attempt repeating,
-        int32_t matchLength = nodeData->repeatedNode->match(nodeData->repeatedNode, &text[totalMatchLength]);
+        int32_t matchLength = nodeData->repeatedNode->match(nodeData->repeatedNode, ncc, &text[totalMatchLength]);
         if (matchLength<1) return followingSubRuleMatchLength==0 ? totalMatchLength : -1;
         totalMatchLength += matchLength;
     } while (True);
@@ -509,14 +509,14 @@ struct AnythingNodeData {
     struct NCC_Node* followingSubRule;
 };
 
-static int32_t anythingNodeMatch(struct NCC_Node* node, const char* text) {
+static int32_t anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct AnythingNodeData* nodeData = node->data;
 
     int32_t totalMatchLength=0;
     do {
         // Check if the following sub-rule matches,
         // TODO: should reset the following sub-rule first...
-        int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, &text[totalMatchLength]);
+        int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, &text[totalMatchLength]);
         if (followingSubRuleMatchLength>0) return totalMatchLength + followingSubRuleMatchLength;
 
         // Following sub-rule didn't match,
@@ -720,7 +720,7 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     int32_t maxMatchLength=-1;
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
         struct NCC_Rule* rule = NVector.get(&ncc->rules, i);
-        int32_t matchLength = rule->tree->match(rule->tree, text);
+        int32_t matchLength = rule->tree->match(rule->tree, ncc, text);
         if (matchLength > maxMatchLength) maxMatchLength = matchLength;
     }
 
