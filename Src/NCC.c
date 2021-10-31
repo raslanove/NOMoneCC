@@ -3,6 +3,7 @@
 #include <NError.h>
 #include <NByteVector.h>
 #include <NString.h>
+#include <NCString.h>
 #include <NVector.h>
 
 //
@@ -36,6 +37,13 @@
 //   sub-rule:        ${name} or {rule}
 //   anything:        *   or  * followed by something
 
+static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule);
+static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule);
+static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName);
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Node
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // TODO: add an NVector<NCC_Node*> for the next node log in every node. This
 // marks the correct match path, and can be followed later to do the code generation...
@@ -67,11 +75,71 @@ const struct NCC_NodeType NCC_NodeType = {
         .ANYTHING = 8
 };
 
-static struct NCC_Node* constructRuleTree(const char* rule);
-static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in_out_rule);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Variable
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct NCC_Variable {
+    struct NString name;
+    struct NString value;
+};
+
+static struct NCC_Variable* initializeVariable(struct NCC_Variable* variable, const char* name, const char* value) {
+    NString.initialize(&variable->name );
+    NString.initialize(&variable->value);
+    NString.set(&variable->name , "%s",  name);
+    NString.set(&variable->value, "%s", value);
+    return variable;
+}
+
+static void destroyVariable(struct NCC_Variable* variable) {
+    NString.destroy(&variable->name );
+    NString.destroy(&variable->value);
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Generic methods
+// Rule
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct NCC_Rule {
+    struct NString name;
+    struct NCC_Node* tree;
+};
+
+struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText) {
+
+    // Create rule tree,
+    struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
+    if (!ruleTree) {
+        NERROR("NCC", "createRule(): unable to construct rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+
+    // Create rule,
+    struct NCC_Rule* rule = NSystemUtils.malloc(sizeof(struct NCC_Rule));
+
+    // Set name,
+    NString.initialize(&rule->name);
+    NString.set(&rule->name, "%s", name);
+
+    // Set tree,
+    rule->tree = ruleTree;
+
+    return rule;
+}
+
+static void destroyRule(struct NCC_Rule* rule) {
+    NString.destroy(&rule->name);
+    rule->tree->deleteTree(rule->tree);
+}
+
+static void destroyAndFreeRule(struct NCC_Rule* rule) {
+    destroyRule(rule);
+    NSystemUtils.free(rule);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Generic node methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static void             genericSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) { if (node->previousNode) node->previousNode->nextNode=0; node->previousNode = previousNode; if (previousNode) previousNode->nextNode = node; }
@@ -110,9 +178,6 @@ static struct NCC_Node* genericCreateNode(int32_t type, void* data, int32_t (*ma
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Root node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// TODO: a variables record should be passed to every node while matching. Each variable should have a rule, and a vector
-// representing a stack of its values...
 
 static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* previousNode) {
     NERROR("NCC.c", "%ssetPreviousNode()%s shouldn't be called on a %sroot%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
@@ -291,7 +356,7 @@ static void orNodeDeleteTree(struct NCC_Node* tree) {
     NSystemUtils.free(tree);
 }
 
-static struct NCC_Node* createOrNode(struct NCC_Node* parentNode, const char** in_out_rule) {
+static struct NCC_Node* createOrNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
 
     // Get grand-parent node,
     struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
@@ -320,7 +385,7 @@ static struct NCC_Node* createOrNode(struct NCC_Node* parentNode, const char** i
         NERROR("NCC", "createOrNode(): %s|%s can't come at the end of a rule/sub-rule", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
         return 0; // Since this node is already attached to the tree, it gets cleaned up automatically.
     }
-    struct NCC_Node* rhsNode = getNextNode(nodeData->rhsTree, in_out_rule);
+    struct NCC_Node* rhsNode = getNextNode(ncc, nodeData->rhsTree, in_out_rule);
     if (!rhsNode) {
         NERROR("NCC", "createOrNode(): couldn't create an rhs node: %s%s%s", NTCOLOR(HIGHLIGHT), remainingSubRule, NTCOLOR(STREAM_DEFAULT));
         return 0; // Since this node is already attached to the tree, it gets cleaned up automatically.
@@ -358,7 +423,7 @@ static void subRuleNodeDeleteTree(struct NCC_Node* tree) {
     NSystemUtils.free(tree);
 }
 
-static struct NCC_Node* createSubRuleNode(const char** in_out_rule) {
+static struct NCC_Node* createSubRuleNode(struct NCC* ncc, const char** in_out_rule) {
 
     // Skip the '{'.
     const char* subRuleBeginning = (*in_out_rule)++;
@@ -395,7 +460,7 @@ static struct NCC_Node* createSubRuleNode(const char** in_out_rule) {
     }
 
     // Create sub-rule tree,
-    struct NCC_Node* subRuleTree = constructRuleTree(subRule.objects);
+    struct NCC_Node* subRuleTree = constructRuleTree(ncc, subRule.objects);
     if (!subRuleTree) {
         NERROR("NCC", "createSubRuleNode(): couldn't create sub-rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), subRuleBeginning, NTCOLOR(STREAM_DEFAULT));
         goto  malformedSubRuleExit;
@@ -453,7 +518,7 @@ static void repeatNodeDeleteTree(struct NCC_Node* tree) {
     NSystemUtils.free(tree);
 }
 
-static struct NCC_Node* createRepeatNode(struct NCC_Node* parentNode, const char** in_out_rule) {
+static struct NCC_Node* createRepeatNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
 
     // Get grand-parent node,
     struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
@@ -487,7 +552,7 @@ static struct NCC_Node* createRepeatNode(struct NCC_Node* parentNode, const char
     parentNode->setNextNode(parentNode, createAcceptNode());
 
     // Create a new tree for the remaining text and set it as the following sub-rule,
-    nodeData->followingSubRule = constructRuleTree(*in_out_rule);
+    nodeData->followingSubRule = constructRuleTree(ncc, *in_out_rule);
     if (!nodeData->followingSubRule) {
         NERROR("NCC", "createRepeatNode(): Couldn't create the following sub-rule tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
         return 0;  // Since this node is already attached to the tree, it gets cleaned up automatically.
@@ -536,13 +601,13 @@ static void anythingNodeDeleteTree(struct NCC_Node* tree) {
     NSystemUtils.free(tree);
 }
 
-static struct NCC_Node* createAnythingNode(const char** in_out_rule) {
+static struct NCC_Node* createAnythingNode(struct NCC* ncc, const char** in_out_rule) {
 
     // Skip the *,
     (*in_out_rule)++;
 
     // Create a new tree for the remaining text and set it as the following sub-rule,
-    struct NCC_Node* followingSubRule = constructRuleTree(*in_out_rule);
+    struct NCC_Node* followingSubRule = constructRuleTree(ncc, *in_out_rule);
     if (!followingSubRule) {
         NERROR("NCC", "createAnythingNode(): Couldn't create the remaining sub-rule tree. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
         return 0;
@@ -563,74 +628,111 @@ static struct NCC_Node* createAnythingNode(const char** in_out_rule) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Variable
+// Substitute node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct NCC_Variable {
-    struct NString name;
-    struct NVector stack;
+struct SubstituteNodeData {
+    struct NCC_Rule* rule;
 };
 
-static void destroyVariable(struct NCC_Variable* variable) {
-    // TODO:...xxx
+static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    struct SubstituteNodeData *nodeData = node->data;
+
+    // Remember the variables stack position,
+    int32_t variablesStackPosition = NVector.size(&ncc->variables);
+
+    // Match,
+    int32_t matchLength = nodeData->rule->tree->match(nodeData->rule->tree, ncc, text);
+    // TODO: perform rule action, passing along the stack position...
+
+    // Pop any pushed variables,
+    int32_t newVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
+    for (;newVariablesCount; newVariablesCount--) {
+        struct NCC_Variable currentVariable;
+        NVector.popBack(&ncc->variables, &currentVariable);
+        destroyVariable(&currentVariable);
+    }
+
+    // Return immediately if no match,
+    if (matchLength == -1) return -1;
+
+    // A match occurred, save it,
+    char *matchedText = NSystemUtils.malloc(matchLength+1);
+    NSystemUtils.memcpy(matchedText, text, matchLength);
+    matchedText[matchLength] = 0;
+
+    struct NCC_Variable match;
+    initializeVariable(&match, NString.get(&nodeData->rule->name), matchedText);
+    NSystemUtils.free(matchedText);
+    NVector.pushBack(&ncc->variables, &match);
+
+    // Match next nodes,
+    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
+    return nextNodeMatchLength!=-1 ? matchLength + nextNodeMatchLength : -1;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Rule
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+static void substituteNodeDeleteTree(struct NCC_Node* tree) {
+    // Note: we don't free the rules, we didn't allocate them.
+    if (tree->nextNode) tree->nextNode->deleteTree(tree->nextNode);
+    NSystemUtils.free(tree->data);
+    NSystemUtils.free(tree);
+}
 
-struct NCC_Rule {
-    struct NString name;
-    struct NVector variables; // Vector of vectors, where each child vector is a stack of a certain variable.
-                              // At every call for match, a null (?) is pushed in every stack to mark the beginning
-                              // of the current call.
-    struct NCC_Node* tree;
-};
+static struct NCC_Node* createSubstituteNode(struct NCC* ncc, const char** in_out_rule) {
 
-struct NCC_Rule* createRule(const char* name, const char* ruleText) {
+    // Skip the '$'.
+    const char* ruleBeginning = (*in_out_rule)++;
 
-    // Create rule tree,
-    struct NCC_Node* ruleTree = constructRuleTree(ruleText);
-    if (!ruleTree) {
-        NERROR("NCC", "createRule(): unable to construct rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
+    // Skip the '{',
+    if (*((*in_out_rule)++) != '{') {
+        NERROR("NCC", "createSubstituteNode(): unescaped %s$%ss must be followed by %s{%ss", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
         return 0;
     }
 
-    // Create rule,
-    struct NCC_Rule* rule = NSystemUtils.malloc(sizeof(struct NCC_Rule));
+    // Find the matching closing braces,
+    const char* ruleNameBeginning = *in_out_rule;
+    int32_t ruleNameLength=0;
+    do {
+        char currentChar = *((*in_out_rule)++);
+        if (currentChar=='}') break;
+        if (!currentChar) {
+            NERROR("NCC", "createSubstituteNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+            return 0;
+        }
+        ruleNameLength++;
+    } while(True);
 
-    // Set name,
-    NString.initialize(&rule->name);
-    NString.set(&rule->name, "%s", name);
+    // Extract rule name,
+    char *ruleName = NSystemUtils.malloc(ruleNameLength+1);
+    NSystemUtils.memcpy(ruleName, ruleNameBeginning, ruleNameLength);
+    ruleName[ruleNameLength] = 0;
 
-    // Initialize variables vector,
-    NVector.initialize(0, sizeof(struct NCC_Variable), &rule->variables);
+    // Look for a match within our defined rules,
+    struct NCC_Rule* rule = getRule(ncc, ruleName);
+    if (!rule) {
+        NERROR("NCC", "createSubstituteNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
+        NSystemUtils.free(ruleName);
+        return 0;
+    }
 
-    // Set tree,
-    rule->tree = ruleTree;
+    // Create the node,
+    struct SubstituteNodeData* nodeData = NSystemUtils.malloc(sizeof(struct SubstituteNodeData));
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.SUBSTITUTE, nodeData, substituteNodeMatch);
+    node->deleteTree = substituteNodeDeleteTree;
+    nodeData->rule = rule;
 
-    return rule;
-}
+    // TODO: remove...
+    NLOGI("NCC", "Created substitute node: %s${%s}%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
 
-static void destroyRule(struct NCC_Rule* rule) {
-
-    // Name,
-    NString.destroy(&rule->name);
-
-    // Variables,
-    int32_t variablesCount = NVector.size(&rule->variables);
-    for (int32_t i=0; i<variablesCount; i++) destroyVariable(NVector.get(&rule->variables, i));
-    NVector.destroy(&rule->variables);
-
-    // Tree,
-    rule->tree->deleteTree(rule->tree);
+    NSystemUtils.free(ruleName);
+    return node;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // NCC
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static struct NCC_Node* constructRuleTree(const char* rule) {
+static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule) {
 
     struct NCC_Node* rootNode = createRootNode();
 
@@ -638,7 +740,7 @@ static struct NCC_Node* constructRuleTree(const char* rule) {
     const char* remainingSubRule = rule;
     int32_t errorsBeginning = NError.observeErrors();
     do {
-        currentNode = getNextNode(currentNode, &remainingSubRule);
+        currentNode = getNextNode(ncc, currentNode, &remainingSubRule);
         if (!currentNode || NError.observeErrors()>errorsBeginning) break;
         if (currentNode->type == NCC_NodeType.ACCEPT) return rootNode;
     } while (True);
@@ -648,7 +750,7 @@ static struct NCC_Node* constructRuleTree(const char* rule) {
     return 0;
 }
 
-static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in_out_rule) {
+static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
 
     char currentChar;
     while ((currentChar = **in_out_rule) == ' ') (*in_out_rule)++;
@@ -659,15 +761,15 @@ static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in
             node = createAcceptNode();
             break;
         case '$':
-            break;
+            node = createSubstituteNode(ncc, in_out_rule); break;
         case '*':
-            node = createAnythingNode(in_out_rule); break;
+            node = createAnythingNode(ncc, in_out_rule); break;
         case '{':
-            node = createSubRuleNode(in_out_rule); break;
+            node = createSubRuleNode(ncc, in_out_rule); break;
         case '^':
-            node = createRepeatNode(parentNode, in_out_rule); break;
+            node = createRepeatNode(ncc, parentNode, in_out_rule); break;
         case '|':
-            node = createOrNode(parentNode, in_out_rule); break;
+            node = createOrNode(ncc, parentNode, in_out_rule); break;
         case '-':
             NERROR("NCC", "getNextNode(): a '%s-%s' must always be preceded by a literal", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
             return 0;
@@ -683,7 +785,8 @@ static struct NCC_Node* getNextNode(struct NCC_Node* parentNode, const char** in
 }
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc) {
-    NVector.initialize(0, sizeof(struct NCC_Rule), &ncc->rules);
+    NVector.initialize(0, sizeof(struct NCC_Rule*), &ncc->rules);
+    NVector.initialize(0, sizeof(struct NCC_Variable), &ncc->variables);
     return ncc;
 }
 
@@ -693,23 +796,42 @@ struct NCC* NCC_createNCC() {
 }
 
 void NCC_destroyNCC(struct NCC* ncc) {
-    int32_t rulesCount = NVector.size(&ncc->rules);
-    for (int32_t i=0; i<rulesCount; i++) destroyRule(NVector.get(&ncc->rules, i));
+
+    // Rules,
+    for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) destroyAndFreeRule(*((struct NCC_Rule**) NVector.get(&ncc->rules, i)));
     NVector.destroy(&ncc->rules);
+
+    // Variables,
+    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) destroyVariable(NVector.get(&ncc->variables, i));
+    NVector.destroy(&ncc->variables);
+}
+
+void NCC_destroyAndFreeNCC(struct NCC* ncc) {
+    NCC_destroyNCC(ncc);
+    NSystemUtils.free(ncc);
 }
 
 boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText) {
 
     // TODO: check for existing name...
 
-    struct NCC_Rule* rule = createRule(name, ruleText);
+    struct NCC_Rule* rule = createRule(ncc, name, ruleText);
     if (!rule) {
         NERROR("NCC", "NCC_addRule(): unable to create rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
-    NVector.pushBack(&ncc->rules, rule);
+    NVector.pushBack(&ncc->rules, &rule);
     return True;
+}
+
+static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName) {
+
+    for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
+        struct NCC_Rule* currentRule = *((struct NCC_Rule**) NVector.get(&ncc->rules, i));
+        if (NCString.equals(ruleName, NString.get(&currentRule->name))) return currentRule;
+    }
+    return 0;
 }
 
 int32_t NCC_match(struct NCC* ncc, const char* text) {
@@ -719,7 +841,7 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     // Find the longest match,
     int32_t maxMatchLength=-1;
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
-        struct NCC_Rule* rule = NVector.get(&ncc->rules, i);
+        struct NCC_Rule* rule = *((struct NCC_Rule**) NVector.get(&ncc->rules, i));
         int32_t matchLength = rule->tree->match(rule->tree, ncc, text);
         if (matchLength > maxMatchLength) maxMatchLength = matchLength;
     }
