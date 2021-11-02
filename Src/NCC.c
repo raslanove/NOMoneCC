@@ -6,6 +6,8 @@
 #include <NCString.h>
 #include <NVector.h>
 
+// .......xxxx don't push/pop/call handler except when the correct match is found...
+
 //
 // Rules:
 //   Exact match   :         for             = for
@@ -104,9 +106,10 @@ static void destroyVariable(struct NCC_Variable* variable) {
 struct NCC_Rule {
     struct NString name;
     struct NCC_Node* tree;
+    NCC_onMatchListener onMatchListener;
 };
 
-struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText) {
+struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener) {
 
     // Create rule tree,
     struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
@@ -124,6 +127,9 @@ struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleT
 
     // Set tree,
     rule->tree = ruleTree;
+
+    // Set listener,
+    rule->onMatchListener = onMatchListener;
 
     return rule;
 }
@@ -429,6 +435,7 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, const char** in_out_r
     const char* subRuleBeginning = (*in_out_rule)++;
 
     // Find the matching closing braces,
+    // TODO: remove the dependency on byte vector, use memcpy...
     struct NByteVector subRule;
     NByteVector.create(2, &subRule);
     int32_t closingBracesRequired=1;
@@ -643,11 +650,17 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
 
     // Match,
     int32_t matchLength = nodeData->rule->tree->match(nodeData->rule->tree, ncc, text);
-    // TODO: perform rule action, passing along the stack position...
 
-    // Pop any pushed variables,
+    // Perform rule action,
+    ncc->currentCallStackBeginning = variablesStackPosition;
     int32_t newVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
-    for (;newVariablesCount; newVariablesCount--) {
+    nodeData->rule->onMatchListener(ncc, &nodeData->rule->name, newVariablesCount);
+
+    // Pop any variables that were not popped,
+    int remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
+    for (;remainingVariablesCount; remainingVariablesCount--) {
+        // Possible performance improvement: Destroying variables in place without popping, then
+        // adjusting the vector size.
         struct NCC_Variable currentVariable;
         NVector.popBack(&ncc->variables, &currentVariable);
         destroyVariable(&currentVariable);
@@ -811,11 +824,11 @@ void NCC_destroyAndFreeNCC(struct NCC* ncc) {
     NSystemUtils.free(ncc);
 }
 
-boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText) {
+boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener) {
 
     // TODO: check for existing name...
 
-    struct NCC_Rule* rule = createRule(ncc, name, ruleText);
+    struct NCC_Rule* rule = createRule(ncc, name, ruleText, onMatchListener);
     if (!rule) {
         NERROR("NCC", "NCC_addRule(): unable to create rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
@@ -836,15 +849,38 @@ static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName) {
 
 int32_t NCC_match(struct NCC* ncc, const char* text) {
 
-    // TODO: perform actions as well...
+    // Make sure the stack is empty,
+    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) destroyVariable(NVector.get(&ncc->variables, i));
+    NVector.reset(&ncc->variables);
 
     // Find the longest match,
     int32_t maxMatchLength=-1;
+    struct NCC_Rule* maxMatchRule=0;
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
         struct NCC_Rule* rule = *((struct NCC_Rule**) NVector.get(&ncc->rules, i));
         int32_t matchLength = rule->tree->match(rule->tree, ncc, text);
-        if (matchLength > maxMatchLength) maxMatchLength = matchLength;
+        if (matchLength > maxMatchLength) {
+            maxMatchLength = matchLength;
+            maxMatchRule = rule;
+        }
     }
 
+    // Perform rule action,
+    ncc->currentCallStackBeginning = 0;
+    if (maxMatchRule && maxMatchRule->onMatchListener) maxMatchRule->onMatchListener(ncc, &maxMatchRule->name, NVector.size(&ncc->variables));
+
     return maxMatchLength;
+}
+
+boolean NCC_popVariable(struct NCC* ncc, struct NString* outName, struct NString* outValue) {
+
+    if (NVector.size(&ncc->variables) <= ncc->currentCallStackBeginning) return False;
+
+    struct NCC_Variable variable; // Needn't be initialized, we'll pop into it.
+    if (!NVector.popBack(&ncc->variables, &variable)) return False;
+    NString.set(outName , "%s", NString.get(&variable.name ));
+    NString.set(outValue, "%s", NString.get(&variable.value));
+    destroyVariable(&variable);
+
+    return True;
 }
