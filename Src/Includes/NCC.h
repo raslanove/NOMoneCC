@@ -21,6 +21,7 @@
 struct NCC {
     struct NVector rules; // Pointers to rules, not rules, so that they don't get relocated when more rules are added.
     struct NVector variables;
+    struct NVector *matchRoute, *tempRoute1, *tempRoute2; // Pointers to nodes.
     int32_t currentCallStackBeginning;
 };
 
@@ -30,6 +31,6 @@ struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
-boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener);
+boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule);
 int32_t NCC_match(struct NCC* ncc, const char* text); // Returns match length if matched, 0 if rejected.
 boolean NCC_popVariable(struct NCC* ncc, struct NString* outName, struct NString* outValue);
