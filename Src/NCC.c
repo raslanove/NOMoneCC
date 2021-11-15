@@ -239,6 +239,17 @@ static int32_t literalNodeMatch(struct NCC_Node* node, struct NCC* ncc, const ch
 }
 
 static int32_t literalNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    // TODO: enable only when verbose...
+    if (text[0] == ' ') {
+        NLOGI("NCC", "Visited literal node: %sSpace%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+    } else if (text[0] == '\n') {
+        NLOGI("NCC", "Visited literal node: %sLine break%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+    } else if (text[0] == '\t') {
+        NLOGI("NCC", "Visited literal node: %sTab%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+    } else {
+        NLOGI("NCC", "Visited literal node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
+    }
+
     struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
 }
@@ -272,6 +283,7 @@ static int32_t literalsRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, co
 }
 
 static int32_t literalsRangeNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    NLOGI("NCC", "Visited literals-range node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
     struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
 }
@@ -555,34 +567,33 @@ struct RepeatNodeData {
 static int32_t repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct RepeatNodeData* nodeData = node->data;
 
+    // Check if the following sub-rule matches,
+    int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, text);
+    if (followingSubRuleMatchLength>0) return followingSubRuleMatchLength;
+
+    // Following sub-rule didn't match, attempt repeating (on the temporary route),
     int32_t tempRouteMark = NVector.size(ncc->tempRoute1);
-    int32_t totalMatchLength=0;
-    int32_t followingSubRuleMatchLength;
-    do {
+    switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
+    int32_t matchLength = nodeData->repeatedNode->match(nodeData->repeatedNode, ncc, text);
+    switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
 
-        // Check if the following sub-rule matches,
-        followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, &text[totalMatchLength]);
-        if (followingSubRuleMatchLength>0) goto conclude;
+    if (matchLength<1) {
+        // Nothing matched, discard,
+        NVector.resize(ncc->tempRoute1, tempRouteMark);
+        return followingSubRuleMatchLength;
+    }
 
-        // Following sub-rule didn't match, attempt repeating (on the temporary route),
-        switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
-        int32_t matchLength = nodeData->repeatedNode->match(nodeData->repeatedNode, ncc, &text[totalMatchLength]);
-        switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
+    // Repeat,
+    int32_t repeatMatchLength = repeatNodeMatch(node, ncc, &text[matchLength]);
+    if (repeatMatchLength==-1) {
+        // Didn't end properly, discard,
+        NVector.resize(ncc->tempRoute1, tempRouteMark);
+        return -1;
+    }
 
-        if (matchLength<1) {
-            if (followingSubRuleMatchLength==-1) {
-                NVector.resize(ncc->tempRoute1, tempRouteMark);
-                return -1;
-            }
-            goto conclude;
-        }
-        totalMatchLength += matchLength;
-    } while (True);
-
-conclude:
     // Push the repeated node route,
     pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
-    return totalMatchLength + followingSubRuleMatchLength;
+    return matchLength + repeatMatchLength;
 }
 
 static void repeatNodeDeleteTree(struct NCC_Node* tree) {
@@ -682,6 +693,7 @@ conclude:
 }
 
 static int32_t anythingNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    NLOGI("NCC", "Visited anything node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
     struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
 }
@@ -795,6 +807,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     NVector.pushBack(&ncc->variables, &match);
 
     // Follow next nodes,
+    NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&match.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&match.value), NTCOLOR(STREAM_DEFAULT));
     nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? matchLength + nextNode->followMatchRoute(nextNode, ncc, &text[matchLength]) : matchLength;
 }
