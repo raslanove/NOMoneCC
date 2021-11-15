@@ -324,12 +324,12 @@ static boolean isReserved(const char literal) {
 static char unescapeLiteral(const char** in_out_rule) {
 
     char literal = ((*in_out_rule)++)[0];
-    if (literal == '\\') {
-        literal = ((*in_out_rule)++)[0];
-        if (literal == 0) {
-            NERROR("NCC", "getEscapedLiteral(): escape character %s\\%s not followed by anything", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
-            return 0;
-        }
+    if (literal != '\\') return literal;
+
+    literal = ((*in_out_rule)++)[0];
+    if (literal == 0) {
+        NERROR("NCC", "getEscapedLiteral(): escape character %s\\%s not followed by anything", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        return 0;
     }
 
     // New line handling,
@@ -568,6 +568,7 @@ static int32_t repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     struct RepeatNodeData* nodeData = node->data;
 
     // Check if the following sub-rule matches,
+    int32_t matchRouteMark = NVector.size(ncc->matchRoute);
     int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, text);
     if (followingSubRuleMatchLength>0) return followingSubRuleMatchLength;
 
@@ -582,6 +583,11 @@ static int32_t repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
         NVector.resize(ncc->tempRoute1, tempRouteMark);
         return followingSubRuleMatchLength;
     }
+
+    // Something matched, attempt repeating. Discard any matches that could have been added by the following sub-rule,
+    // TODO: If "Discarding!" never gets printed, remove...
+    if (NVector.size(ncc->matchRoute) != matchRouteMark) NLOGI("sdf", "Discarding!");
+    NVector.resize(ncc->matchRoute, matchRouteMark);
 
     // Repeat,
     int32_t repeatMatchLength = repeatNodeMatch(node, ncc, &text[matchLength]);
@@ -668,10 +674,13 @@ static int32_t anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const c
     int32_t followingSubRuleMatchLength;
     do {
         // Check if the following sub-rule matches,
+        int32_t matchRouteMark = NVector.size(ncc->matchRoute);
         followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, &text[totalMatchLength]);
         if (followingSubRuleMatchLength>0) goto conclude;
 
         // Following sub-rule didn't match,
+        NVector.resize(ncc->matchRoute, matchRouteMark);
+
         // If text ended,
         if (!text[totalMatchLength]) {
             if (followingSubRuleMatchLength==-1) {
