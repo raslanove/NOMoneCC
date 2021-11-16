@@ -25,11 +25,14 @@ void NMain() {
                        "// Pushes and adds two constants.\n"
                        "push constant 7\n"
                        "push constant 8\n"
-                       "add";
+                       "add\n"
+                       "\"besm Allah \\\" :) \\ \" \n";
 
     // Substitute,
     struct NCC ncc;
     NCC_initializeNCC(&ncc);
+
+    // Elements,
     NCC_addRule(&ncc, "Empty", "", 0, False);
     NLOGI(0, "---------");
     NCC_addRule(&ncc, "WhiteSpace", "{\\ |\t|\\n}^*", 0, False);
@@ -42,8 +45,18 @@ void NMain() {
     NLOGI(0, "---------");
     NCC_addRule(&ncc, "Add", "add", matchListener, False);
     NLOGI(0, "---------");
-    NCC_addRule(&ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Push} | ${Add}}^*", matchListener, True);
+
+    // TODO: to be moved to HelloCC,
+    // String,
+    NCC_addRule(&ncc, "Literal", "\x01-\xff", 0, False);
     NLOGI(0, "---------");
+    NCC_addRule(&ncc, "String", "\" { ${Literal}|{\\\\${Literal}} }^* \"", 0, False);
+    NLOGI(0, "---------");
+
+    // Document,
+    NCC_addRule(&ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Push} | ${Add} | ${String}}^*", matchListener, True);
+    NLOGI(0, "---------");
+
     int32_t matchLength = NCC_match(&ncc, text);
     NCC_destroyNCC(&ncc);
 

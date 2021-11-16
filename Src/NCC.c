@@ -269,12 +269,12 @@ static struct NCC_Node* createLiteralNode(const char literal) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct LiteralsRangeNodeData {
-    char rangeStart, rangeEnd;
+    unsigned char rangeStart, rangeEnd;
 };
 
 static int32_t literalsRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct LiteralsRangeNodeData* nodeData = node->data;
-    char literal = *text;
+    unsigned char literal = (unsigned char) *text;
     if ((literal < nodeData->rangeStart) || (literal > nodeData->rangeEnd)) return -1;
     int32_t matchLength = node->nextNode->match(node->nextNode, ncc, &text[1]);
     if (matchLength==-1) return -1;
@@ -288,12 +288,12 @@ static int32_t literalsRangeNodeFollowMatchRoute(struct NCC_Node* node, struct N
     return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
 }
 
-static struct NCC_Node* createLiteralsRangeNode(char rangeStart, char rangeEnd) {
+static struct NCC_Node* createLiteralsRangeNode(unsigned char rangeStart, unsigned char rangeEnd) {
 
     struct LiteralsRangeNodeData* nodeData = NSystemUtils.malloc(sizeof(struct LiteralsRangeNodeData));
     struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERALS_RANGE, nodeData, literalsRangeNodeMatch, literalsRangeNodeFollowMatchRoute);
     if (rangeStart > rangeEnd) {
-        char temp = rangeStart;
+        unsigned char temp = rangeStart;
         rangeStart = rangeEnd;
         rangeEnd = temp;
     }
