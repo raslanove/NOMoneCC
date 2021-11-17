@@ -945,6 +945,7 @@ static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode
 }
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc) {
+    ncc->extraData = 0;
     NVector.initialize(0, sizeof(struct NCC_Rule*), &ncc->rules);
     NVector.initialize(0, sizeof(struct NCC_Variable), &ncc->variables);
     ncc->matchRoute = NVector.create(0, sizeof(struct NCC_Node*));
