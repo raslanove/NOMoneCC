@@ -26,17 +26,13 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_onMatchListener onMatchLis
 }
 
 void matchListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    NLOGI("HelloCC", "matchListener(): ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
-    struct NString variableName, variableValue;
-    NString.initialize(&variableName );
-    NString.initialize(&variableValue);
-    while (variablesCount--) {
-        NCC_popVariable(ncc, &variableName, &variableValue);
-        NLOGI("HelloCC", "                             Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variableName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variableValue), NTCOLOR(STREAM_DEFAULT));
+    NLOGI("HelloCC", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
+    struct NCC_Variable variable;
+    while (NCC_popVariable(ncc, &variable)) {
+        NLOGI("HelloCC", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variable.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
+        NCC_destroyVariable(&variable);
     }
-    //while (NCC_popVariable(ncc, &variableName, &variableValue)) NLOGI("HelloCC", "                             Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variableName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variableValue), NTCOLOR(STREAM_DEFAULT));
-    NString.destroy(&variableName );
-    NString.destroy(&variableValue);
+    matchListener():
 }
 
 void NMain() {
@@ -107,6 +103,12 @@ void NMain() {
     assert(&ncc, "Milestone", matchListener, False, "", "", False, 0);
     assert(&ncc, "ActualRule1", matchListener, True, "${Milestone}abc", "abc", True, 3);
     assert(&ncc, "ActualRule2", matchListener, True, "xyz", "xyz", True, 3);
+    NCC_destroyNCC(&ncc);
+
+    NCC_initializeNCC(&ncc);
+    assert(&ncc, "Literal", 0, False, "\x01-\xff", "", False, 0);
+    assert(&ncc, "String", 0, False, "\" { ${Literal}|{\\\\${Literal}} }^* \"", "", False, 0);
+    assert(&ncc, "StringContainer", matchListener, True, "${String}", "\"besm Allah \\\" :)\"", True, 18);
     NCC_destroyNCC(&ncc);
 
     NError.logAndTerminate();

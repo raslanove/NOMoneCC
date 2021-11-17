@@ -3,14 +3,22 @@
 #include <NSystemUtils.h>
 #include <NError.h>
 
-void matchListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    NLOGI("HelloCC", "matchListener(): ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
-    struct NString variableName, variableValue;
-    NString.initialize(&variableName );
-    NString.initialize(&variableValue);
-    while (NCC_popVariable(ncc, &variableName, &variableValue)) NLOGI("HelloCC", "                             Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variableName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variableValue), NTCOLOR(STREAM_DEFAULT));
-    NString.destroy(&variableName );
-    NString.destroy(&variableValue);
+void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+    NLOGI("VMTranslate", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
+    struct NCC_Variable variable;
+    while (NCC_popVariable(ncc, &variable)) {
+        NLOGI("VMTranslate", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variable.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
+        NCC_destroyVariable(&variable);
+    }
+    NLOGI("", "");
+}
+
+void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+    printMatch(ncc, ruleName, variablesCount);
+}
+
+void addListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+    printMatch(ncc, ruleName, variablesCount);
 }
 
 void NMain() {
@@ -28,7 +36,6 @@ void NMain() {
                        "add\n"
                        "\"besm Allah \\\" :) \\ \" \n";
 
-    // Substitute,
     struct NCC ncc;
     NCC_initializeNCC(&ncc);
 
@@ -41,26 +48,23 @@ void NMain() {
     NLOGI(0, "---------");
     NCC_addRule(&ncc, "Integer", "{1-9}{0-9}^*", 0, False);
     NLOGI(0, "---------");
-    NCC_addRule(&ncc, "Push", "push ${WhiteSpace} constant ${WhiteSpace} ${Integer}", matchListener, False);
-    NLOGI(0, "---------");
-    NCC_addRule(&ncc, "Add", "add", matchListener, False);
-    NLOGI(0, "---------");
 
-    // TODO: to be moved to HelloCC,
-    // String,
-    NCC_addRule(&ncc, "Literal", "\x01-\xff", 0, False);
+    // Instructions,
+    NCC_addRule(&ncc, "Push", "push ${WhiteSpace} constant ${WhiteSpace} ${Integer}", pushListener, False);
     NLOGI(0, "---------");
-    NCC_addRule(&ncc, "String", "\" { ${Literal}|{\\\\${Literal}} }^* \"", 0, False);
+    NCC_addRule(&ncc, "Add", "add", addListener, False);
+    NLOGI(0, "---------");
+    NCC_addRule(&ncc, "Instruction", "${Push} | ${Add}", printMatch, False);
     NLOGI(0, "---------");
 
     // Document,
-    NCC_addRule(&ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Push} | ${Add} | ${String}}^*", matchListener, True);
+    NCC_addRule(&ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Instruction}}^*", printMatch, True);
     NLOGI(0, "---------");
 
+    // Match,
     int32_t matchLength = NCC_match(&ncc, text);
-    NCC_destroyNCC(&ncc);
-
     NLOGI("VMTranslate", "NMain(): matchLength: %d", matchLength);
+    NCC_destroyNCC(&ncc);
 
     NError.logAndTerminate();
 }

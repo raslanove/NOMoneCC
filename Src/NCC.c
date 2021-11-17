@@ -1,4 +1,5 @@
 #include <NCC.h>
+
 #include <NSystemUtils.h>
 #include <NError.h>
 #include <NByteVector.h>
@@ -80,12 +81,7 @@ const struct NCC_NodeType NCC_NodeType = {
 // Variable
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct NCC_Variable {
-    struct NString name;
-    struct NString value;
-};
-
-static struct NCC_Variable* initializeVariable(struct NCC_Variable* variable, const char* name, const char* value) {
+struct NCC_Variable* NCC_initializeVariable(struct NCC_Variable* variable, const char* name, const char* value) {
     NString.initialize(&variable->name );
     NString.initialize(&variable->value);
     NString.set(&variable->name , "%s",  name);
@@ -93,7 +89,7 @@ static struct NCC_Variable* initializeVariable(struct NCC_Variable* variable, co
     return variable;
 }
 
-static void destroyVariable(struct NCC_Variable* variable) {
+void NCC_destroyVariable(struct NCC_Variable* variable) {
     NString.destroy(&variable->name );
     NString.destroy(&variable->value);
 }
@@ -239,7 +235,7 @@ static int32_t literalNodeMatch(struct NCC_Node* node, struct NCC* ncc, const ch
 }
 
 static int32_t literalNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
-    // TODO: enable only when verbose...
+    #ifdef NCC_VERBOSE
     if (text[0] == ' ') {
         NLOGI("NCC", "Visited literal node: %sSpace%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
     } else if (text[0] == '\n') {
@@ -249,6 +245,7 @@ static int32_t literalNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* nc
     } else {
         NLOGI("NCC", "Visited literal node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
     }
+    #endif
 
     struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
@@ -259,8 +256,9 @@ static struct NCC_Node* createLiteralNode(const char literal) {
     struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERAL, nodeData, literalNodeMatch, literalNodeFollowMatchRoute);
     nodeData->literal = literal;
 
-    // TODO: remove...
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created literal node: %s%c%s", NTCOLOR(HIGHLIGHT), literal, NTCOLOR(STREAM_DEFAULT));
+    #endif
     return node;
 }
 
@@ -283,7 +281,9 @@ static int32_t literalsRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, co
 }
 
 static int32_t literalsRangeNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Visited literals-range node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
+    #endif
     struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
 }
@@ -300,8 +300,9 @@ static struct NCC_Node* createLiteralsRangeNode(unsigned char rangeStart, unsign
     nodeData->rangeStart = rangeStart;
     nodeData->rangeEnd = rangeEnd;
 
-    // TODO: remove...
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created range literal node: %s%c-%c%s", NTCOLOR(HIGHLIGHT), rangeStart, rangeEnd, NTCOLOR(STREAM_DEFAULT));
+    #endif
     return node;
 }
 
@@ -450,8 +451,9 @@ static struct NCC_Node* createOrNode(struct NCC* ncc, struct NCC_Node* parentNod
     }
     rhsNode->setNextNode(rhsNode, createAcceptNode());
 
-    // TODO: remove...
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created or node: %s|%s%s", NTCOLOR(HIGHLIGHT), remainingSubRule, NTCOLOR(STREAM_DEFAULT));
+    #endif
     return node;
 }
 
@@ -544,8 +546,9 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, const char** in_out_r
     node->deleteTree = subRuleNodeDeleteTree;
     nodeData->subRuleTree = subRuleTree;
 
-    // TODO: remove...
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created sub-rule node: %s{%s}%s", NTCOLOR(HIGHLIGHT), subRule.objects, NTCOLOR(STREAM_DEFAULT));
+    #endif
     NByteVector.destroy(&subRule);
 
     return node;
@@ -653,8 +656,9 @@ static struct NCC_Node* createRepeatNode(struct NCC* ncc, struct NCC_Node* paren
     // The remainder of the tree was already added to the following sub-rule, no need to continue parsing,
     while (**in_out_rule) (*in_out_rule)++;
 
-    // TODO: remove...
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created repeat node: %s^*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
+    #endif
     return node;
 }
 
@@ -702,7 +706,9 @@ conclude:
 }
 
 static int32_t anythingNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Visited anything node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
+    #endif
     struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
 }
@@ -736,8 +742,9 @@ static struct NCC_Node* createAnythingNode(struct NCC* ncc, const char** in_out_
     // The remainder of the tree was already added to the following sub-rule, no need to continue parsing,
     while (**in_out_rule) (*in_out_rule)++;
 
-    // TODO: remove...
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created anything node: %s*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
+    #endif
     return node;
 }
 
@@ -802,7 +809,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
         // adjusting the vector size. Or even better, reusing variables.
         struct NCC_Variable currentVariable;
         NVector.popBack(&ncc->variables, &currentVariable);
-        destroyVariable(&currentVariable);
+        NCC_destroyVariable(&currentVariable);
     }
 
     // Save the match,
@@ -811,12 +818,14 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     matchedText[matchLength] = 0;
 
     struct NCC_Variable match;
-    initializeVariable(&match, NString.get(&nodeData->rule->name), matchedText);
+    NCC_initializeVariable(&match, NString.get(&nodeData->rule->name), matchedText);
     NSystemUtils.free(matchedText);
     NVector.pushBack(&ncc->variables, &match);
 
     // Follow next nodes,
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&match.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&match.value), NTCOLOR(STREAM_DEFAULT));
+    #endif
     nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
     return nextNode ? matchLength + nextNode->followMatchRoute(nextNode, ncc, &text[matchLength]) : matchLength;
 }
@@ -871,8 +880,9 @@ static struct NCC_Node* createSubstituteNode(struct NCC* ncc, const char** in_ou
     node->deleteTree = substituteNodeDeleteTree;
     nodeData->rule = rule;
 
-    // TODO: remove...
+    #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created substitute node: %s${%s}%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
+    #endif
 
     NSystemUtils.free(ruleName);
     return node;
@@ -955,7 +965,8 @@ void NCC_destroyNCC(struct NCC* ncc) {
     NVector.destroy(&ncc->rules);
 
     // Variables,
-    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) destroyVariable(NVector.get(&ncc->variables, i));
+    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--)
+        NCC_destroyVariable(NVector.get(&ncc->variables, i));
     NVector.destroy(&ncc->variables);
 
     // Routes,
@@ -1045,7 +1056,6 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     if (maxMatchLength==-1) goto conclude;
 
     // Follow the longest match route,
-    //NLOGE("sdf", "Size: %d", NVector.size(&maxMatchRoute));
     if (NVector.size(&maxMatchRoute)) {
 
         // Set the match route,
@@ -1055,7 +1065,6 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
         // Follow route,
         struct NCC_Node* routeStart;
         NVector.popBack(ncc->matchRoute, &routeStart);
-        //NLOGE("sdf", "%d", routeStart->type);
         routeStart->followMatchRoute(routeStart, ncc, text);
     }
 
@@ -1066,7 +1075,7 @@ conclude:
     if (maxMatchRule && maxMatchRule->onMatchListener) maxMatchRule->onMatchListener(ncc, &maxMatchRule->name, NVector.size(&ncc->variables));
 
     // Empty the variables stack,
-    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) destroyVariable(NVector.get(&ncc->variables, i));
+    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) NCC_destroyVariable(NVector.get(&ncc->variables, i));
     NVector.reset(&ncc->variables);
 
     // Destroy the max match route,
@@ -1075,15 +1084,12 @@ conclude:
     return maxMatchLength;
 }
 
-boolean NCC_popVariable(struct NCC* ncc, struct NString* outName, struct NString* outValue) {
+boolean NCC_popVariable(struct NCC* ncc, struct NCC_Variable* outVariable) {
 
     if (NVector.size(&ncc->variables) <= ncc->currentCallStackBeginning) return False;
 
-    struct NCC_Variable variable; // Needn't be initialized, we'll pop into it.
-    if (!NVector.popBack(&ncc->variables, &variable)) return False;
-    NString.set(outName , "%s", NString.get(&variable.name ));
-    NString.set(outValue, "%s", NString.get(&variable.value));
-    destroyVariable(&variable);
+    // The variable needn't be initialized, we'll pop into it,
+    if (!NVector.popBack(&ncc->variables, outVariable)) return False;
 
     return True;
 }
