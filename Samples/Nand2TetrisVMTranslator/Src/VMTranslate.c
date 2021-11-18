@@ -44,7 +44,18 @@ void NMain() {
                        "gt\n"
                        "push constant 32766\n"
                        "push constant 32766\n"
-                       "gt";
+                       "gt\n"
+                       "push constant 57\n"
+                       "push constant 31\n"
+                       "push constant 53\n"
+                       "add\n"
+                       "push constant 112\n"
+                       "sub\n"
+                       "neg\n"
+                       "and\n"
+                       "push constant 82\n"
+                       "or\n"
+                       "not";
 
     // Create ncc,
     struct NCC ncc;
@@ -66,10 +77,15 @@ void NMain() {
     NCC_addRule(&ncc, "StackModifier", "constant", 0, False);
     NCC_addRule(&ncc, "Push", "push ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}", pushListener, False);
     NCC_addRule(&ncc, "Add", "add", addListener, False);
-    NCC_addRule(&ncc, "Eq", "eq", eqListener, False);
-    NCC_addRule(&ncc, "LT", "lt", ltListener, False);
-    NCC_addRule(&ncc, "GT", "gt", gtListener, False);
-    NCC_addRule(&ncc, "Instruction", "${Push} | ${Add} | ${Eq} | ${LT} | ${GT}", 0, False);
+    NCC_addRule(&ncc, "Sub", "sub", subListener, False);
+    NCC_addRule(&ncc, "And", "and", andListener, False);
+    NCC_addRule(&ncc, "Or" , "or" ,  orListener, False);
+    NCC_addRule(&ncc, "Eq" , "eq" ,  eqListener, False);
+    NCC_addRule(&ncc, "LT" , "lt" ,  ltListener, False);
+    NCC_addRule(&ncc, "GT" , "gt" ,  gtListener, False);
+    NCC_addRule(&ncc, "Neg", "neg", negListener, False);
+    NCC_addRule(&ncc, "Not", "not", notListener, False);
+    NCC_addRule(&ncc, "Instruction", "${Push} | ${Add} | ${Sub} | ${And} | ${Or} | ${Eq} | ${LT} | ${GT} | ${Neg} | ${Not}", 0, False);
 
     // Document,
     NCC_addRule(&ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Instruction}}^*", 0, True);

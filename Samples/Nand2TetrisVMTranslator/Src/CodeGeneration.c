@@ -78,8 +78,7 @@ void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
     NCC_destroyVariable(&variable);
 }
 
-void addListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-
+inline static void emit2OperandArithmeticCode(struct NCC* ncc, const char* instruction, char operator) {
     // Example:
     //   add
     //
@@ -89,19 +88,36 @@ void addListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCou
     //   // add
     //   @SP
     //   M=M-1
-    //   @SP
     //   A=M
     //   D=M
+    //
     //   @SP
     //   M=M-1
     //   A=M
-    //   M=D+M
+    //   M=M+D    // Or another operator.
+    //
     //   @SP
     //   M=M+1
-    emitCode(ncc, "// add\n@SP\nM=M-1\n@SP\nA=M\nD=M\n@SP\nM=M-1\nA=M\nM=D+M\n@SP\nM=M+1\n\n");
+    emitCode(ncc, "// %s\n@SP\nM=M-1\nA=M\nD=M\n@SP\nM=M-1\nA=M\nM=M%cD\n@SP\nM=M+1\n\n", instruction, operator);
 }
 
-static void emitComparisonCode(struct NCC* ncc, const char* instruction, const char* jump) {
+void addListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+    emit2OperandArithmeticCode(ncc, "add", '+');
+}
+
+void subListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+    emit2OperandArithmeticCode(ncc, "sub", '-');
+}
+
+void andListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+    emit2OperandArithmeticCode(ncc, "and", '&');
+}
+
+void  orListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+    emit2OperandArithmeticCode(ncc, "or", '|');
+}
+
+inline static void emitComparisonCode(struct NCC* ncc, const char* instruction, const char* jump) {
 
     // Example:
     //   eq
@@ -118,8 +134,6 @@ static void emitComparisonCode(struct NCC* ncc, const char* instruction, const c
     //   // eq
     //   @SP
     //   M=M-1
-    //
-    //   @SP
     //   A=M
     //   D=M
     //
@@ -146,17 +160,54 @@ static void emitComparisonCode(struct NCC* ncc, const char* instruction, const c
     //   (Label2)
     //   @SP
     //   M=M+1
-    emitCode(ncc, "// %s\n@SP\nM=M-1\n@SP\nA=M\nD=M\n@SP\nM=M-1\nA=M\nD=D-M\n@Label%d\nD;%s\n@SP\nA=M\nM=0\n@Label%d\n0;JMP\n(Label%d)\n@SP\nA=M\nM=-1\n(Label%d)\n@SP\nM=M+1\n\n", instruction, labelIndex1, jump, labelIndex2, labelIndex1, labelIndex2);
+    emitCode(ncc, "// %s\n@SP\nM=M-1\nA=M\nD=M\n@SP\nM=M-1\nA=M\nD=D-M\n@Label%d\nD;%s\n@SP\nA=M\nM=0\n@Label%d\n0;JMP\n(Label%d)\n@SP\nA=M\nM=-1\n(Label%d)\n@SP\nM=M+1\n\n", instruction, labelIndex1, jump, labelIndex2, labelIndex1, labelIndex2);
 }
 
-void eqListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void  eqListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     emitComparisonCode(ncc, "eq", "JEQ");
 }
 
-void ltListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void  ltListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     emitComparisonCode(ncc, "lt", "JGT");
 }
 
-void gtListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void  gtListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     emitComparisonCode(ncc, "gt", "JLT");
+}
+
+void negListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+
+    // Example:
+    //   neg
+    //
+    // Expecting 0 variables.
+
+    // Code:
+    //   // neg
+    //   D=0
+    //   @SP
+    //   M=M-1
+    //   A=M
+    //   M=D-M
+    //   @SP
+    //   M=M+1
+    emitCode(ncc, "// neg\nD=0\n@SP\nM=M-1\nA=M\nM=D-M\n@SP\nM=M+1\n\n");
+}
+
+void notListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+
+    // Example:
+    //   not
+    //
+    // Expecting 0 variables.
+
+    // Code:
+    //   // not
+    //   @SP
+    //   M=M-1
+    //   A=M
+    //   M=!M
+    //   @SP
+    //   M=M+1
+    emitCode(ncc, "// not\n@SP\nM=M-1\nA=M\nM=!M\n@SP\nM=M+1\n\n");
 }

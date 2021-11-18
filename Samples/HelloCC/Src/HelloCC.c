@@ -32,7 +32,6 @@ void matchListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesC
         NLOGI("HelloCC", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variable.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
         NCC_destroyVariable(&variable);
     }
-    matchListener():
 }
 
 void NMain() {
