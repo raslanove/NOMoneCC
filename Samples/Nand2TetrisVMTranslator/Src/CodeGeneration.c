@@ -2,6 +2,8 @@
 #include <NCC.h>
 
 #include <NCString.h>
+#include <NError.h>
+#include <NSystemUtils.h>
 
 static void emitCode(struct NCC* ncc, const char* format, ...) {
     va_list vaList;
@@ -85,6 +87,7 @@ void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
     // Offset,
     struct NCC_Variable valueVariable;
     NCC_popVariable(ncc, &valueVariable);
+    const char* valueString = NString.get(&valueVariable.value);
 
     // Whitespace,
     struct NCC_Variable variable;
@@ -92,7 +95,64 @@ void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
 
     // Modifier,
     NCC_popVariable(ncc, &variable);
-    if (NCString.equals(NString.get(&variable.value), "constant")) {
+    if (NCString.equals(NString.get(&variable.value), "local")) {
+        // Code:
+        //   // push local index (or argument/this/that)
+        //   @index
+        //   D=A
+        //   @LCL      // or ARG/THIS/THAT
+        //   A=M
+        //   A=A+D
+        //   D=M
+        //
+        //   @SP
+        //   A=M
+        //   M=D
+        //
+        //   @SP
+        //   M=M+1
+        emitCode(ncc, "// push local %s\n@%s\nD=A\n@LCL\nA=M\nA=A+D\nD=M\n\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "argument")) {
+        emitCode(ncc, "// push argument %s\n@%s\nD=A\n@ARG\nA=M\nA=A+D\nD=M\n\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "this")) {
+        emitCode(ncc, "// push this %s\n@%s\nD=A\n@THIS\nA=M\nA=A+D\nD=M\n\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "that")) {
+        emitCode(ncc, "// push that %s\n@%s\nD=A\n@THAT\nA=M\nA=A+D\nD=M\n\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "pointer")) {
+        // Code:
+        //   // push pointer 0 (or 1)
+        //   @THIS  // or THAT.
+        //   D=M
+        //
+        //   @SP
+        //   A=M
+        //   M=D
+        //
+        //   @SP
+        //   M=M+1
+        if (NCString.equals(valueString, "0")) {
+            emitCode(ncc, "// push pointer 0\n@THIS\nD=M\n\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n");
+        } else if (NCString.equals(valueString, "1")) {
+            emitCode(ncc, "// push pointer 1\n@THAT\nD=M\n\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n");
+        } else {
+            NERROR("CodeGeneration", "pushListener(): pointer index can only be 0 or 1. Found: %s%s%s", NTCOLOR(HIGHLIGHT), valueString, NTCOLOR(STREAM_DEFAULT));
+            return ; // TODO: Should set parsing termination flag...
+        }
+    } else if (NCString.equals(NString.get(&variable.value), "temp")) {
+        int32_t index = 5 + NCString.parseInteger(valueString);
+        // Code:
+        //   // push temp index
+        //   @index
+        //   D=M
+        //
+        //   @SP
+        //   A=M
+        //   M=D
+        //
+        //   @SP
+        //   M=M+1
+        emitCode(ncc, "// push temp %s\n@%d\nD=M\n\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n", valueString, index);
+    } else if (NCString.equals(NString.get(&variable.value), "constant")) {
         // Code:
         //   // push constant value
         //   @value
@@ -100,11 +160,147 @@ void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
         //   @SP
         //   A=M
         //   M=D
+        //
         //   @SP
         //   M=M+1
-        const char* valueString = NString.get(&valueVariable.value);
-        emitCode(ncc, "// push constant %s\n@%s\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n\n", valueString, valueString);
+        emitCode(ncc, "// push constant %s\n@%s\nD=A\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "static")) {
+
+        // Prepare static variable name,
+        struct NString staticVariableName;
+        NString.initialize(&staticVariableName);
+
+        struct OutputData* outputData = (struct OutputData*) ncc->extraData;
+        int32_t index = NCString.parseInteger(valueString);
+        NString.set(&staticVariableName, "%s.%d", NString.get(&outputData->fileName), index);
+
+        // Code:
+        //   // push static index
+        //   @staticVariableName
+        //   D=M
+        //   @SP
+        //   A=M
+        //   M=D
+        //
+        //   @SP
+        //   M=M+1
+        emitCode(ncc, "// push static %s\n@%s\nD=M\n@SP\nA=M\nM=D\n\n@SP\nM=M+1\n\n", valueString, NString.get(&staticVariableName));
+        NString.destroy(&staticVariableName);
+    } else {
+        NERROR("CodeGeneration", "pushListener(): expected local|argument|this|that|pointer|temp|constant|static. Found: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
+        return ; // TODO: Should set parsing termination flag...
     }
+
+    NCC_destroyVariable(&valueVariable);
+    NCC_destroyVariable(&variable);
+}
+
+void popListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+
+    // Example:
+    //   pop local 7
+    //
+    // Expecting 4 variables:
+    //   Integer (7).
+    //   Whitespace.
+    //   Stack modifier (local).
+    //   Whitespace.
+
+    // Offset,
+    struct NCC_Variable valueVariable;
+    NCC_popVariable(ncc, &valueVariable);
+    const char* valueString = NString.get(&valueVariable.value);
+
+    // Whitespace,
+    struct NCC_Variable variable;
+    NCC_popVariable(ncc, &variable); NCC_destroyVariable(&variable);
+
+    // Modifier,
+    NCC_popVariable(ncc, &variable);
+    if (NCString.equals(NString.get(&variable.value), "local")) {
+        // Code:
+        //   // pop local index (or argument/this/that)
+        //   @index
+        //   D=A
+        //   @LCL      // or ARG/THIS/THAT
+        //   D=M+D
+        //
+        //   @SP
+        //   A=M
+        //   M=D
+        //
+        //   @SP
+        //   M=M-1
+        //   A=M
+        //   D=M
+        //
+        //   @SP
+        //   A=M+1
+        //   A=M
+        //   M=D
+        emitCode(ncc, "// pop local %s\n@%s\nD=A\n@LCL\nD=M+D\n\n@SP\nA=M\nM=D\n\n@SP\nM=M-1\nA=M\nD=M\n\n@SP\nA=M+1\nA=M\nM=D\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "argument")) {
+        emitCode(ncc, "// pop argument %s\n@%s\nD=A\n@ARG\nD=M+D\n\n@SP\nA=M\nM=D\n\n@SP\nM=M-1\nA=M\nD=M\n\n@SP\nA=M+1\nA=M\nM=D\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "this")) {
+        emitCode(ncc, "// pop this %s\n@%s\nD=A\n@THIS\nD=M+D\n\n@SP\nA=M\nM=D\n\n@SP\nM=M-1\nA=M\nD=M\n\n@SP\nA=M+1\nA=M\nM=D\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "that")) {
+        emitCode(ncc, "// pop that %s\n@%s\nD=A\n@THAT\nD=M+D\n\n@SP\nA=M\nM=D\n\n@SP\nM=M-1\nA=M\nD=M\n\n@SP\nA=M+1\nA=M\nM=D\n\n", valueString, valueString);
+    } else if (NCString.equals(NString.get(&variable.value), "pointer")) {
+        // Code:
+        //   // pop pointer 0 (or 1)
+        //   @SP
+        //   M=M-1
+        //   A=M
+        //   D=M
+        //
+        //   @THIS  // or THAT.
+        //   M=D
+        if (NCString.equals(valueString, "0")) {
+            emitCode(ncc, "// pop pointer 0\n@SP\nM=M-1\nA=M\nD=M\n\n@THIS\nM=D\n\n");
+        } else if (NCString.equals(valueString, "1")) {
+            emitCode(ncc, "// pop pointer 1\n@SP\nM=M-1\nA=M\nD=M\n\n@THAT\nM=D\n\n");
+        } else {
+            NERROR("CodeGeneration", "popListener(): pointer index can only be 0 or 1. Found: %s%s%s", NTCOLOR(HIGHLIGHT), valueString, NTCOLOR(STREAM_DEFAULT));
+            return ; // TODO: Should set parsing termination flag...
+        }
+    } else if (NCString.equals(NString.get(&variable.value), "temp")) {
+        int32_t index = 5 + NCString.parseInteger(valueString);
+        // Code:
+        //   // pop temp index
+        //   @SP
+        //   M=M-1
+        //   A=M
+        //   D=M
+        //
+        //   @index
+        //   M=D
+        emitCode(ncc, "// pop temp %s\n@SP\nM=M-1\nA=M\nD=M\n\n@%d\nM=D\n\n", valueString, index);
+    } else if (NCString.equals(NString.get(&variable.value), "static")) {
+
+        // Prepare static variable name,
+        struct NString staticVariableName;
+        NString.initialize(&staticVariableName);
+
+        struct OutputData* outputData = (struct OutputData*) ncc->extraData;
+        int32_t index = NCString.parseInteger(valueString);
+        NString.set(&staticVariableName, "%s.%d", NString.get(&outputData->fileName), index);
+
+        // Code:
+        //   // pop static index
+        //   @SP
+        //   M=M-1
+        //   A=M
+        //   D=M
+        //
+        //   @staticVariableName
+        //   M=D
+        emitCode(ncc, "// pop static %s\n@SP\nM=M-1\nA=M\nD=M\n\n@%s\nM=D\n\n", valueString, NString.get(&staticVariableName));
+        NString.destroy(&staticVariableName);
+    } else {
+        NERROR("CodeGeneration", "popListener(): expected local|argument|this|that|pointer|temp|static. Found: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
+        return ; // TODO: Should set parsing termination flag...
+    }
+
     NCC_destroyVariable(&valueVariable);
     NCC_destroyVariable(&variable);
 }

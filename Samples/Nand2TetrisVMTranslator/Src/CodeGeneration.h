@@ -6,6 +6,7 @@
 #include <NString.h>
 
 struct OutputData {
+    struct NString fileName;
     struct NString code;
     int32_t lastLabelIndex;
 };
@@ -15,6 +16,7 @@ struct NCC;
 void emitInitializationCode(struct NCC* ncc);
 void emitTerminationCode(struct NCC* ncc);
 void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
+void  popListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
 void  addListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
 void  subListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
 void  andListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);

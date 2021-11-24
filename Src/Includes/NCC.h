@@ -35,6 +35,11 @@ struct NCC {
     int32_t currentCallStackBeginning;
 };
 
+// TODO: Should take a structure instead of multiple variables.
+// TODO: The structure should contain the matched text and matched length.
+// TODO: The structure should have output members, indicating a modified match length, and an indicator
+//       to whether parsing should proceed or terminate.
+// TODO: should return True if this rule was accepted, False otherwise to look for other alternatives.
 typedef void (*NCC_onMatchListener)(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc);
