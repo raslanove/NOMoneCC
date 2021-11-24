@@ -3,4 +3,4 @@ rm VMTranslate.o
 make
 echo
 echo
-./VMTranslate.o
+./VMTranslate.o ../PointerTest.vm

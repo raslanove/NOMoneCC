@@ -1,4 +1,5 @@
 # By-products of wasm build,
 *.wasm
 *.wat
+*.asm
 

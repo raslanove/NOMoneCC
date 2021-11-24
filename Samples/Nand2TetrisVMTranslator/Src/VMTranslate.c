@@ -3,6 +3,10 @@
 
 #include <NSystemUtils.h>
 #include <NError.h>
+#include <NCString.h>
+
+// TODO: remove. Provide file access utilities in the std lib instead...
+#include <stdio.h>
 
 void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     NLOGI("VMTranslate", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
@@ -14,21 +18,19 @@ void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCoun
     NLOGI("", "");
 }
 
-void NMain() {
+void NMain(int argc, char *argv[]) {
 
     NSystemUtils.logI("sdf", "besm Allah :)");
 
-    const char* code = "push constant 111\n"
-                       "push constant 333\n"
-                       "push constant 888\n"
-                       "pop static 8\n"
-                       "pop static 3\n"
-                       "pop static 1\n"
-                       "push static 3\n"
-                       "push static 1\n"
-                       "sub\n"
-                       "push static 8\n"
-                       "add";
+    // Read code file,
+    FILE *file = fopen(argv[1], "rb");
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);  // Same as rewind(f).
+
+    char* code = NSystemUtils.malloc(fileSize + 1);
+    fread(code, 1, fileSize, file);
+    fclose(file);
 
     // Create ncc,
     struct NCC ncc;
@@ -76,9 +78,25 @@ void NMain() {
     NCC_destroyNCC(&ncc);
 
     // Print generated code,
-    NLOGI("VMTranslate", "Generated code:\n============================\n%s", NString.get(&outputData.code));
+    //NLOGI("VMTranslate", "Generated code:\n============================\n%s", NString.get(&outputData.code));
+
+    // Write generated code to file,
+    // Generate file name,
+    struct NString outputFileName;
+    NString.initialize(&outputFileName);
+    argv[1][NCString.length(argv[1])-3] = 0;
+    NString.set(&outputFileName, "%s.asm", argv[1]);
+
+    // Write to file,
+    file = fopen(NString.get(&outputFileName), "wb");
+    fwrite(NString.get(&outputData.code), 1, NString.length(&outputData.code), file);
+    fclose(file);
+    NString.destroy(&outputFileName);
+
+    // Clean up,
     NString.destroy(&outputData.fileName);
     NString.destroy(&outputData.code);
+    NSystemUtils.free(code);
 
     NError.logAndTerminate();
 }
