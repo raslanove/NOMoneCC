@@ -12,6 +12,7 @@
 
 // Node types:
 //   literal:         a
+//   TODO: literals sequence node?
 //   or:              |
 //   literals range:  a-z
 //   repeat:          ^*
