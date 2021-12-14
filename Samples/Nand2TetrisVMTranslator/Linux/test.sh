@@ -1,6 +1,6 @@
 clear
-rm VMTranslate.o
+rm VMTranslate.o > /dev/null 2>&1
 make
 echo
 echo
-./VMTranslate.o ../PointerTest.vm
+./VMTranslate.o ../VMSamples/FibonacciElement

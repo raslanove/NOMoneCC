@@ -71,6 +71,8 @@ void NMain() {
     assert(0, 0, 0, True, "x{ab}^*{cd}^*", "x", True, 1);
     assert(0, 0, 0, True, "x{ab}^*{cd}^*", "xab", True, 3);
     assert(0, 0, 0, True, "x{ab}^*{cd}^*", "xcd", True, 3);
+    assert(0, 0, 0, True, "{xyz}^*xyz", "xyzxyzxyz", True, 3);
+    assert(0, 0, 0, True, "{{xyz}^*}xyz", "xyzxyzxyz", False, 0);
 
     // *
     assert(0, 0, 0, True, "*", "xyz", True, 3);
@@ -78,6 +80,8 @@ void NMain() {
     assert(0, 0, 0, True, "********", "xyz", True, 3);
     assert(0, 0, 0, True, "********abc", "xyzabc", True, 6);
     assert(0, 0, 0, True, "*a*b*c*", "__a__c__", False, 0);
+    assert(0, 0, 0, True, "*XYZ", "abcdefgXYZ", True, 10);
+    assert(0, 0, 0, True, "{*}XYZ", "abcdefgXYZ", False, 0);
 
     // General test-cases,
     assert(0, 0, 0, True, "{a-z|A-Z}{a-z|A-Z|0-9}^*", "myVariable3", True, 11);

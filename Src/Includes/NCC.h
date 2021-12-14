@@ -22,6 +22,36 @@
 
 // TODO: add documentation and limitations...
 
+// Limitations:
+// ============
+// Wildcard nodes:
+// ---------------
+// Anything nodes (*) will match anything until the remaining part of the sub-rule is encountered.
+// For instance:
+//   *xyz
+// Will consume all the text until an "xyz" is found. This works well as long as the termination
+// sequence is within the same sub-rule. If the termination sequence is part of a parent rule, it
+// won't ever be reached. For example:
+//   {*}xyz
+// will never match anything.
+//
+// The same could be said for the repeat nodes (^*), depending on the contents of the repeated
+// expression. For example:
+//   {xyz}^*xyz
+// will find an immediate match in the text "xyzxyzxyz", because the termination sequence is right
+// there at the beginning. However,
+//   {{xyz}^*}xyz
+// will consume the entire text within the sub-rule, as it can't see the parent's termination
+// sequence.
+//
+// Or nodes:
+// ---------
+// Or nodes will consider whatever comes after the "|" a separate sub-rule. Or nodes work by
+// creating a tree for the node just before the "|" (lhs) and another tree for the node following
+// it (rhs). During matching, whichever gets the longest match is considered the correct match.
+// However, this effectively puts the next node within braces ({rhs}), hence exposing it to the
+// wildcard limitations.
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // NCC
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -333,9 +333,6 @@ static char unescapeLiteral(const char** in_out_rule) {
         return 0;
     }
 
-    // New line handling,
-    if (literal == 'n') return '\n';
-
     // Just return as is,
     return literal;
 }
