@@ -25,7 +25,7 @@ set(SRC
         ${StdLibCommonCFiles})
 
 add_library( # Sets the name of the library.
-             HelloCC
+             NOMoneStdLib
 
              # Sets the library as a shared library.
              SHARED
@@ -55,7 +55,7 @@ find_library( # Sets the name of the path variable.
 # build script, prebuilt third-party libraries, or system libraries.
 
 target_link_libraries( # Specifies the target library.
-                       HelloCC
+                       NOMoneStdLib
 
                        android
                        ${log-lib} )

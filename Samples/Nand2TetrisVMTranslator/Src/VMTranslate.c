@@ -18,9 +18,9 @@ static void specifyLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "Integer", "0-9 | 1-9 0-9^*", 0, False);
     NCC_addRule(ncc, "Identifier", "${NotWhiteSpaceLiteral}^*", 0, False);
     NCC_addRule(ncc, "Label", "label ${WhiteSpace} ${Identifier}", labelListener, False);
+    NCC_addRule(ncc, "StackModifier", "${NotWhiteSpaceLiteral}^*", 0, False);
 
     // Instructions,
-    NCC_addRule(ncc, "StackModifier", "${NotWhiteSpaceLiteral}^*", 0, False);
     NCC_addRule(ncc, "Push", "push ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}", pushListener, False);
     NCC_addRule(ncc, "Pop" , "pop  ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}",  popListener, False);
     NCC_addRule(ncc, "Add", "add", addListener, False);
