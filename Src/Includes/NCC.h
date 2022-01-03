@@ -11,10 +11,9 @@
 #include <NString.h>
 
 // Node types:
-//   literal:         a
-//   TODO: literals sequence node?
+//   literals:        abc
 //   or:              |
-//   literals range:  a-z
+//   literal range:   a-z
 //   repeat:          ^*
 //   sub-rule:        {rule}
 //   substitute:      ${name}
