@@ -390,37 +390,91 @@ static int32_t orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
     struct OrNodeData* nodeData = node->data;
 
     // Match the sides on temporary routes,
+    // Right hand side,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
     int32_t rhsRouteMark = NVector.size(ncc->matchRoute);
     int32_t rhsMatchLength = nodeData->rhsTree->match(nodeData->rhsTree, ncc, text);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
 
+    // Left hand side,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute2);
     int32_t lhsRouteMark = NVector.size(ncc->matchRoute);
     int32_t lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, ncc, text);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute2);
 
-    int32_t matchLength = rhsMatchLength > lhsMatchLength ? rhsMatchLength : lhsMatchLength;
-    if (matchLength==-1) return -1;
+    // If neither right or left matches,
+    if ((rhsMatchLength==-1) && (lhsMatchLength==-1)) return -1;
 
-    int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
-    if (nextNodeMatchLength==-1) {
-        NVector.resize(ncc->tempRoute1, rhsRouteMark);
-        NVector.resize(ncc->tempRoute2, lhsRouteMark);
+    // If we needn't check the following tree twice,
+    if ((rhsMatchLength==lhsMatchLength) ||
+        (rhsMatchLength==-1) ||
+        (lhsMatchLength==-1)) {
+
+        int32_t matchLength = rhsMatchLength > lhsMatchLength ? rhsMatchLength : lhsMatchLength;
+        int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
+        if (nextNodeMatchLength==-1) {
+            NVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
+            NVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
+            return -1;
+        }
+
+        // Push the correct temporary route,
+        if (rhsMatchLength > lhsMatchLength) {
+            pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, rhsRouteMark);
+            NVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
+        } else {
+            pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute2, lhsRouteMark);
+            NVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
+        }
+        return matchLength + nextNodeMatchLength;
+    }
+
+    // RHS and LHS match lengths are not the same. To maximize the overall match length, we have
+    // to take the rest of the tree into account by matching at both right and left lengths,
+
+    // Right hand side,
+    switchRoutes(&ncc->matchRoute, &ncc->tempRoute3);
+    int32_t rhsTreeRouteMark = NVector.size(ncc->matchRoute);
+    int32_t rhsTreeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[rhsMatchLength]);
+    switchRoutes(&ncc->matchRoute, &ncc->tempRoute3);
+
+    // Left hand side,
+    switchRoutes(&ncc->matchRoute, &ncc->tempRoute4);
+    int32_t lhsTreeRouteMark = NVector.size(ncc->matchRoute);
+    int32_t lhsTreeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[lhsMatchLength]);
+    switchRoutes(&ncc->matchRoute, &ncc->tempRoute4);
+
+    // If neither right or left trees match,
+    if ((rhsTreeMatchLength==-1) && (lhsTreeMatchLength==-1)) {
+        NVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
+        NVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
         return -1;
     }
 
-    // Push the correct temporary route,
+    // Get the final match lengths,
+    rhsMatchLength += rhsTreeMatchLength;
+    if (rhsTreeMatchLength==-1) rhsMatchLength = -1;
+    lhsMatchLength += lhsTreeMatchLength;
+    if (lhsTreeMatchLength==-1) lhsMatchLength = -1;
+
+    // Push the correct temporary routes,
+    int32_t matchLength;
     if (rhsMatchLength > lhsMatchLength) {
+        matchLength = rhsMatchLength;
+        pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute3, rhsTreeRouteMark);
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, rhsRouteMark);
+        NVector.resize(ncc->tempRoute4, lhsTreeRouteMark);
         NVector.resize(ncc->tempRoute2, lhsRouteMark);
     } else {
+        matchLength = lhsMatchLength;
+        pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute4, lhsTreeRouteMark);
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute2, lhsRouteMark);
+        NVector.resize(ncc->tempRoute3, rhsTreeRouteMark);
         NVector.resize(ncc->tempRoute1, rhsRouteMark);
     }
 
     // Or nodes don't get pushed into the route,
-    return matchLength + nextNodeMatchLength;
+    return matchLength;
 }
 
 static void orNodeDeleteTree(struct NCC_Node* tree) {
@@ -956,6 +1010,8 @@ struct NCC* NCC_initializeNCC(struct NCC* ncc) {
     ncc->matchRoute = NVector.create(0, sizeof(struct NCC_Node*));
     ncc->tempRoute1 = NVector.create(0, sizeof(struct NCC_Node*));
     ncc->tempRoute2 = NVector.create(0, sizeof(struct NCC_Node*));
+    ncc->tempRoute3 = NVector.create(0, sizeof(struct NCC_Node*));
+    ncc->tempRoute4 = NVector.create(0, sizeof(struct NCC_Node*));
     return ncc;
 }
 
@@ -979,6 +1035,8 @@ void NCC_destroyNCC(struct NCC* ncc) {
     NVector.destroyAndFree(ncc->matchRoute);
     NVector.destroyAndFree(ncc->tempRoute1);
     NVector.destroyAndFree(ncc->tempRoute2);
+    NVector.destroyAndFree(ncc->tempRoute3);
+    NVector.destroyAndFree(ncc->tempRoute4);
 }
 
 void NCC_destroyAndFreeNCC(struct NCC* ncc) {
@@ -1044,6 +1102,8 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
         NVector.reset(ncc->matchRoute);
         NVector.reset(ncc->tempRoute1);
         NVector.reset(ncc->tempRoute2);
+        NVector.reset(ncc->tempRoute3);
+        NVector.reset(ncc->tempRoute4);
 
         // Match rule,
         int32_t matchLength = rule->tree->match(rule->tree, ncc, text);

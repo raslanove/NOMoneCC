@@ -61,7 +61,7 @@ struct NCC {
     void* extraData;
     struct NVector rules; // Pointers to rules, not rules, so that they don't get relocated when more rules are added.
     struct NVector variables;
-    struct NVector *matchRoute, *tempRoute1, *tempRoute2; // Pointers to nodes.
+    struct NVector *matchRoute, *tempRoute1, *tempRoute2, *tempRoute3, *tempRoute4; // Pointers to nodes. TODO: maybe turn them into an array?
     int32_t currentCallStackBeginning;
 };
 
