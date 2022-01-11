@@ -102,9 +102,10 @@ struct NCC_Rule {
     struct NCC_Node* tree;
     NCC_onMatchListener onMatchListener;
     boolean rootRule; // True: can be matched alone. False: must be part of some other rule.
+    boolean pushVariable; // False: matches, but the value is ignored.
 };
 
-struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule) {
+static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable) {
 
     // Create rule tree,
     struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
@@ -119,6 +120,7 @@ struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleT
     rule->tree = ruleTree;
     rule->onMatchListener = onMatchListener;
     rule->rootRule = rootRule;
+    rule->pushVariable = pushVariable;
 
     return rule;
 }
@@ -268,6 +270,9 @@ static struct NCC_Node* createLiteralsNode(const char* literals) {
 // Literal range node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// TODO: add vector of dummy nodes to be push upon matching. The dummy nodes should fast-forward (with count) during the following phase. Reuse the nodes based on the match length. Implement vector insert method and use it.
+// TODO: add a combine function that gets called up pushing a node. The combine function could result in not pushing anything, just reusing the previous node.
+
 struct LiteralRangeNodeData {
     unsigned char rangeStart, rangeEnd;
 };
@@ -348,7 +353,7 @@ static struct NCC_Node* handleLiteral(struct NCC_Node* parentNode, const char** 
     char literal = unescapeLiteral(in_out_rule);
     if (!literal) return 0;
 
-    // Check if this was a literals range,
+    // Check if this was a literal range,
     struct NCC_Node* node;
     char followingLiteral = **in_out_rule;
     if (followingLiteral == '-') {
@@ -886,14 +891,16 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     }
 
     // Save the match,
-    char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
-    NSystemUtils.memcpy(matchedText, text, matchLength);
-    matchedText[matchLength] = 0;
+    if (nodeData->rule->pushVariable) {
+        char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
+        NSystemUtils.memcpy(matchedText, text, matchLength);
+        matchedText[matchLength] = 0;
 
-    struct NCC_Variable match;
-    NCC_initializeVariable(&match, NString.get(&nodeData->rule->name), matchedText);
-    NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
-    NVector.pushBack(&ncc->variables, &match);
+        struct NCC_Variable match;
+        NCC_initializeVariable(&match, NString.get(&nodeData->rule->name), matchedText);
+        NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
+        NVector.pushBack(&ncc->variables, &match);
+    }
 
     // Follow next nodes,
     #ifdef NCC_VERBOSE
@@ -1044,11 +1051,11 @@ void NCC_destroyAndFreeNCC(struct NCC* ncc) {
     NFREE(ncc, "NCC.NCC_destroyAndFreeNCC() ncc");
 }
 
-boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule) {
+boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable) {
 
     // TODO: check for existing name...
 
-    struct NCC_Rule* rule = createRule(ncc, name, ruleText, onMatchListener, rootRule);
+    struct NCC_Rule* rule = createRule(ncc, name, ruleText, onMatchListener, rootRule, pushVariable);
     if (!rule) {
         NERROR("NCC", "NCC_addRule(): unable to create rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
