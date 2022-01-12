@@ -158,7 +158,10 @@ static void genericDeleteTreeWithData(struct NCC_Node* tree) {
 typedef int32_t (*      MatchMethod)(struct NCC_Node* node, struct NCC* ncc, const char* text);
 typedef int32_t (*FollowMatchMethod)(struct NCC_Node* node, struct NCC* ncc, const char* text);
 
-static int32_t genericNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) { return 0; }
+static int32_t genericNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
+    NLOGE("NCC", "genericNodeFollowMatchRoute(): this should never be reached. Nodes that have this method are not pushed while matching to begin with.");
+    return 0;
+}
 
 static struct NCC_Node* genericCreateNode(int32_t type, void* data, MatchMethod matchMethod, FollowMatchMethod followMatchMethod) {
     struct NCC_Node* node = NMALLOC(sizeof(struct NCC_Node), "NCC.genericCreateNode() node");
@@ -270,8 +273,12 @@ static struct NCC_Node* createLiteralsNode(const char* literals) {
 // Literal range node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// TODO: add vector of dummy nodes to be push upon matching. The dummy nodes should fast-forward (with count) during the following phase. Reuse the nodes based on the match length. Implement vector insert method and use it.
-// TODO: add a combine function that gets called up pushing a node. The combine function could result in not pushing anything, just reusing the previous node.
+// TODO: use an NByteVectors to mark the match route instead of NVector. Instead of pushing 
+//       node pointers, push 1 byte value:
+//         0     : ignore (rule end marker).
+//         1->254: skip this number of literals.
+//         255   : a substitute node pointer is pushed after this value 
+// TODO: add a combine function that gets called instead of pushing a node. The combine function could end up not pushing anything, just adjusting the previous value.
 
 struct LiteralRangeNodeData {
     unsigned char rangeStart, rangeEnd;
@@ -853,16 +860,25 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
         return -1;
     }
 
-    // Push 0 to mark the end of the rule route,
-    struct NCC_Node* termination=0;
-    NVector.pushBack(ncc->matchRoute, &termination);
+    // Check if pushing this node is useful,
+    if (nodeData->rule->pushVariable || nodeData->rule->onMatchListener) {
 
-    // Push the rule route,
-    pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
+        // Push 0 to mark the end of the rule route,
+        struct NCC_Node* termination=0;
+        NVector.pushBack(ncc->matchRoute, &termination);
 
-    // Push this node,
-    NVector.pushBack(ncc->matchRoute, &node);
-    return matchLength + nextNodeMatchLength;
+        // Push the rule route,
+        pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
+
+        // Push this node,
+        NVector.pushBack(ncc->matchRoute, &node);
+        return matchLength + nextNodeMatchLength;
+
+    } else {
+        // Push the rule route,
+        pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
+        return matchLength + nextNodeMatchLength;
+    }
 }
 
 static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
