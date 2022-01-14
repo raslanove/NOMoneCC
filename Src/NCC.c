@@ -39,11 +39,25 @@
 //         still, spaces must still be escaped, for they can be used to make rules look a lot cleaner.
 //
 
+//
+// Operation:
+//   First, we construct our rules. Then, given a string, we find the match route. The match route is
+//   constructed in an NByteVector. We push single bytes or node pointers according to the following:
+//     0     : rule end marker.
+//     1->254: skip this number of literals.
+//     255   : rule beginning marker. Right afer this, a substitute node pointer was pushed.
+//
+// TODO: bytes indicating skipped literals should be combined together. The code is there, just commented
+// out because it's not working properly. Most probably it's because we can't discard stack history if it
+// was combined with what came before. A suggested fix is to push a delimeter after switching stacks to
+// prevent combining?
+
 static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule);
 static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule);
 static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName);
-static void switchRoutes(struct NVector** route1, struct NVector** route2);
-static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NVector* tempRoute, int32_t tempRouteMark);
+static void switchRoutes(struct NByteVector** route1, struct NByteVector** route2);
+static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tempRoute, int32_t tempRouteMark);
+static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Node
@@ -54,8 +68,8 @@ struct NCC_Node {
     void *data;
     struct NCC_Node* previousNode;
     struct NCC_Node*     nextNode;
+    // TODO: remove all function pointers....
     int32_t (*      match     )(struct NCC_Node* node, struct NCC* ncc, const char* text); // Returns match length if matched, -1 if rejected.
-    int32_t (*followMatchRoute)(struct NCC_Node* node, struct NCC* ncc, const char* text); // Returns match length if matched, -1 if rejected.
     void (*setPreviousNode)(struct NCC_Node* node, struct NCC_Node* previousNode);
     void (*setNextNode    )(struct NCC_Node* node, struct NCC_Node*     nextNode);
     struct NCC_Node* (*getPreviousNode)(struct NCC_Node* node);
@@ -156,19 +170,70 @@ static void genericDeleteTreeWithData(struct NCC_Node* tree) {
 }
 
 typedef int32_t (*      MatchMethod)(struct NCC_Node* node, struct NCC* ncc, const char* text);
-typedef int32_t (*FollowMatchMethod)(struct NCC_Node* node, struct NCC* ncc, const char* text);
 
-static int32_t genericNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
-    NLOGE("NCC", "genericNodeFollowMatchRoute(): this should never be reached. Nodes that have this method are not pushed while matching to begin with.");
-    return 0;
+static void skipNLiteralsNoCombine(struct NCC* ncc, uint32_t n) {
+    while (n > 254) {
+        NByteVector.pushBack(ncc->matchRoute, 254);
+        n-= 254;
+    }
+    NByteVector.pushBack(ncc->matchRoute, n);
 }
 
-static struct NCC_Node* genericCreateNode(int32_t type, void* data, MatchMethod matchMethod, FollowMatchMethod followMatchMethod) {
+// Returns true if combined successfully, False if just pushed.
+static boolean skipNLiterals(struct NCC* ncc, uint32_t n) {
+
+    // TODO: fix!
+    if (True) {
+        skipNLiteralsNoCombine(ncc, n);
+        return False;
+    }
+
+    uint8_t lastPushedValue=0;
+    if (!NByteVector.popBack(ncc->matchRoute, &lastPushedValue)) {
+        skipNLiteralsNoCombine(ncc, n);
+        return False;
+    }
+    if ((lastPushedValue==0) || (lastPushedValue==255)) {
+        NByteVector.pushBack(ncc->matchRoute, lastPushedValue);
+        skipNLiteralsNoCombine(ncc, n);
+        return False;
+    }
+
+    skipNLiteralsNoCombine(ncc, (uint32_t) n + lastPushedValue);
+    return True;
+}
+
+static int32_t followMatchRoute(struct NCC* ncc, const char* text) {
+
+    uint32_t matchLength = 0;
+    uint8_t currentValue=0;
+    while (NByteVector.popBack(ncc->matchRoute, &currentValue)) {
+
+
+        if (currentValue==0) {
+            // This rule just ended,
+            break;
+        } else if (currentValue == 255) {
+
+            // If following is a substitute node,
+            struct NCC_Node* node;
+            NByteVector.popBackBulk(ncc->matchRoute, &node, sizeof(struct NCC_Node*));
+            matchLength += substituteNodeFollowMatchRoute(node, ncc, &text[matchLength]);
+            continue;
+        }
+
+        // This is just a skip,
+        matchLength += currentValue;
+    }
+
+    return matchLength;
+}
+
+static struct NCC_Node* genericCreateNode(int32_t type, void* data, MatchMethod matchMethod) {
     struct NCC_Node* node = NMALLOC(sizeof(struct NCC_Node), "NCC.genericCreateNode() node");
     node->type = type;
     node->data = data;
     node->match = matchMethod;
-    node->followMatchRoute = followMatchMethod ? followMatchMethod : genericNodeFollowMatchRoute;
 
     node->previousNode = 0;
     node->nextNode = 0;
@@ -194,7 +259,7 @@ static int32_t rootNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char*
 }
 
 static struct NCC_Node* createRootNode() {
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ROOT, 0, rootNodeMatch, 0);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ROOT, 0, rootNodeMatch);
     node->setPreviousNode = rootNodeSetPreviousNode;
     return node;
 }
@@ -213,7 +278,7 @@ static int32_t acceptNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
 }
 
 static struct NCC_Node* createAcceptNode(struct NCC_Node* parentNode) {
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ACCEPT, 0, acceptNodeMatch, 0);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ACCEPT, 0, acceptNodeMatch);
     node->setNextNode = acceptNodeSetNextNode;
     parentNode->setNextNode(parentNode, node);
     return node;
@@ -233,19 +298,9 @@ static int32_t literalsNodeMatch(struct NCC_Node* node, struct NCC* ncc, const c
     int32_t length = NString.length(&nodeData->literals);
     int32_t matchLength = node->nextNode->match(node->nextNode, ncc, &text[length]);
     if (matchLength==-1) return -1;
-    NVector.pushBack(ncc->matchRoute, &node);
+
+    skipNLiterals(ncc, length);
     return matchLength+length;
-}
-
-static int32_t literalsNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
-    struct LiteralsNodeData* nodeData = node->data;
-    #ifdef NCC_VERBOSE
-    NLOGI("NCC", "Visited literals node: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&nodeData->literals), NTCOLOR(STREAM_DEFAULT));
-    #endif
-
-    int32_t length = NString.length(&nodeData->literals);
-    struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
-    return nextNode ? length + nextNode->followMatchRoute(nextNode, ncc, &text[length]) : length;
 }
 
 static void literalsNodeDeleteTree(struct NCC_Node* tree) {
@@ -258,7 +313,7 @@ static void literalsNodeDeleteTree(struct NCC_Node* tree) {
 
 static struct NCC_Node* createLiteralsNode(const char* literals) {
     struct LiteralsNodeData* nodeData = NMALLOC(sizeof(struct LiteralsNodeData), "NCC.createLiteralsNode() nodeData");
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERALS, nodeData, literalsNodeMatch, literalsNodeFollowMatchRoute);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERALS, nodeData, literalsNodeMatch);
     node->deleteTree = literalsNodeDeleteTree;
 
     NString.initialize(&nodeData->literals, "%s", literals);
@@ -273,13 +328,6 @@ static struct NCC_Node* createLiteralsNode(const char* literals) {
 // Literal range node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// TODO: use an NByteVectors to mark the match route instead of NVector. Instead of pushing 
-//       node pointers, push 1 byte value:
-//         0     : ignore (rule end marker).
-//         1->254: skip this number of literals.
-//         255   : a substitute node pointer is pushed after this value 
-// TODO: add a combine function that gets called instead of pushing a node. The combine function could end up not pushing anything, just adjusting the previous value.
-
 struct LiteralRangeNodeData {
     unsigned char rangeStart, rangeEnd;
 };
@@ -290,22 +338,15 @@ static int32_t literalRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, con
     if ((literal < nodeData->rangeStart) || (literal > nodeData->rangeEnd)) return -1;
     int32_t matchLength = node->nextNode->match(node->nextNode, ncc, &text[1]);
     if (matchLength==-1) return -1;
-    NVector.pushBack(ncc->matchRoute, &node);
-    return matchLength+1;
-}
 
-static int32_t literalRangeNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
-    #ifdef NCC_VERBOSE
-    NLOGI("NCC", "Visited literal-range node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
-    #endif
-    struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
-    return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
+    skipNLiterals(ncc, 1);
+    return matchLength+1;
 }
 
 static struct NCC_Node* createLiteralRangeNode(unsigned char rangeStart, unsigned char rangeEnd) {
 
     struct LiteralRangeNodeData* nodeData = NMALLOC(sizeof(struct LiteralRangeNodeData), "NCC.createLiteralRangeNode() nodeData");
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERAL_RANGE, nodeData, literalRangeNodeMatch, literalRangeNodeFollowMatchRoute);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.LITERAL_RANGE, nodeData, literalRangeNodeMatch);
     if (rangeStart > rangeEnd) {
         unsigned char temp = rangeStart;
         rangeStart = rangeEnd;
@@ -404,14 +445,14 @@ static int32_t orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
     // Match the sides on temporary routes,
     // Right hand side,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
-    int32_t rhsRouteMark = NVector.size(ncc->matchRoute);
-    int32_t rhsMatchLength = nodeData->rhsTree->match(nodeData->rhsTree, ncc, text);
+    uint32_t rhsRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  rhsMatchLength = nodeData->rhsTree->match(nodeData->rhsTree, ncc, text);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
 
     // Left hand side,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute2);
-    int32_t lhsRouteMark = NVector.size(ncc->matchRoute);
-    int32_t lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, ncc, text);
+    uint32_t lhsRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  lhsMatchLength = nodeData->lhsTree->match(nodeData->lhsTree, ncc, text);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute2);
 
     // If neither right or left matches,
@@ -425,18 +466,18 @@ static int32_t orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
         int32_t matchLength = rhsMatchLength > lhsMatchLength ? rhsMatchLength : lhsMatchLength;
         int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
         if (nextNodeMatchLength==-1) {
-            NVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
-            NVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
+            NByteVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
+            NByteVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
             return -1;
         }
 
         // Push the correct temporary route,
         if (rhsMatchLength > lhsMatchLength) {
             pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, rhsRouteMark);
-            NVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
+            NByteVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
         } else {
             pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute2, lhsRouteMark);
-            NVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
+            NByteVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
         }
         return matchLength + nextNodeMatchLength;
     }
@@ -446,20 +487,20 @@ static int32_t orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
 
     // Right hand side,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute3);
-    int32_t rhsTreeRouteMark = NVector.size(ncc->matchRoute);
-    int32_t rhsTreeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[rhsMatchLength]);
+    uint32_t rhsTreeRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  rhsTreeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[rhsMatchLength]);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute3);
 
     // Left hand side,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute4);
-    int32_t lhsTreeRouteMark = NVector.size(ncc->matchRoute);
-    int32_t lhsTreeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[lhsMatchLength]);
+    uint32_t lhsTreeRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  lhsTreeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[lhsMatchLength]);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute4);
 
     // If neither right or left trees match,
     if ((rhsTreeMatchLength==-1) && (lhsTreeMatchLength==-1)) {
-        NVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
-        NVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
+        NByteVector.resize(ncc->tempRoute1, rhsRouteMark); // Discard RHS.
+        NByteVector.resize(ncc->tempRoute2, lhsRouteMark); // Discard LHS.
         return -1;
     }
 
@@ -475,14 +516,14 @@ static int32_t orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
         matchLength = rhsMatchLength;
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute3, rhsTreeRouteMark);
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, rhsRouteMark);
-        NVector.resize(ncc->tempRoute4, lhsTreeRouteMark);
-        NVector.resize(ncc->tempRoute2, lhsRouteMark);
+        NByteVector.resize(ncc->tempRoute4, lhsTreeRouteMark);
+        NByteVector.resize(ncc->tempRoute2, lhsRouteMark);
     } else {
         matchLength = lhsMatchLength;
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute4, lhsTreeRouteMark);
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute2, lhsRouteMark);
-        NVector.resize(ncc->tempRoute3, rhsTreeRouteMark);
-        NVector.resize(ncc->tempRoute1, rhsRouteMark);
+        NByteVector.resize(ncc->tempRoute3, rhsTreeRouteMark);
+        NByteVector.resize(ncc->tempRoute1, rhsRouteMark);
     }
 
     // Or nodes don't get pushed into the route,
@@ -509,7 +550,7 @@ static struct NCC_Node* createOrNode(struct NCC* ncc, struct NCC_Node* parentNod
 
     // Create node,
     struct OrNodeData* nodeData = NMALLOC(sizeof(struct OrNodeData), "NCC.createOrNode() nodeData");
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.OR, nodeData, orNodeMatch, 0);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.OR, nodeData, orNodeMatch);
     node->deleteTree = orNodeDeleteTree;
 
     // Remove parent from the grand-parent and attach this node instead,
@@ -553,8 +594,8 @@ static int32_t subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const ch
 
     // Match sub-rule on a temporary route,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
-    int32_t tempRouteMark = NVector.size(ncc->matchRoute);
-    int32_t matchLength = nodeData->subRuleTree->match(nodeData->subRuleTree, ncc, text);
+    uint32_t tempRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  matchLength = nodeData->subRuleTree->match(nodeData->subRuleTree, ncc, text);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
 
     if (matchLength==-1) return -1;
@@ -562,7 +603,7 @@ static int32_t subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const ch
     // Match next node,
     int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
     if (nextNodeMatchLength==-1) {
-        NVector.resize(ncc->tempRoute1, tempRouteMark);
+        NByteVector.resize(ncc->tempRoute1, tempRouteMark);
         return -1;
     }
 
@@ -587,7 +628,7 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
     // Find the matching closing braces,
     // TODO: remove the dependency on byte vector, use memcpy...
     struct NByteVector subRule;
-    NByteVector.create(2, &subRule);
+    NByteVector.initialize(&subRule, 2);
     int32_t closingBracesRequired=1;
     boolean subRuleComplete=False;
     for (int32_t i=0;; i++) {
@@ -617,7 +658,7 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
     }
 
     // Create sub-rule tree,
-    struct NCC_Node* subRuleTree = constructRuleTree(ncc, subRule.objects);
+    struct NCC_Node* subRuleTree = constructRuleTree(ncc, (const char *) subRule.objects);
     if (!subRuleTree) {
         NERROR("NCC", "createSubRuleNode(): couldn't create sub-rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), subRuleBeginning, NTCOLOR(STREAM_DEFAULT));
         goto  malformedSubRuleExit;
@@ -625,7 +666,7 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
 
     // Create the sub-rule node,
     struct SubRuleNodeData* nodeData = NMALLOC(sizeof(struct SubRuleNodeData), "NCC.createSubRuleNode() nodeData");
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.SUB_RULE, nodeData, subRuleNodeMatch, 0);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.SUB_RULE, nodeData, subRuleNodeMatch);
     node->deleteTree = subRuleNodeDeleteTree;
     nodeData->subRuleTree = subRuleTree;
 
@@ -655,32 +696,35 @@ static int32_t repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     struct RepeatNodeData* nodeData = node->data;
 
     // Check if the following sub-rule matches,
-    int32_t matchRouteMark = NVector.size(ncc->matchRoute);
-    int32_t followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, text);
+    uint32_t matchRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, text);
     if (followingSubRuleMatchLength>0) return followingSubRuleMatchLength;
 
     // Following sub-rule didn't match, attempt repeating (on the temporary route),
-    int32_t tempRouteMark = NVector.size(ncc->tempRoute1);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
-    int32_t matchLength = nodeData->repeatedNode->match(nodeData->repeatedNode, ncc, text);
+    uint32_t tempRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  matchLength = nodeData->repeatedNode->match(nodeData->repeatedNode, ncc, text);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
 
     if (matchLength<1) {
         // Nothing matched, discard,
-        NVector.resize(ncc->tempRoute1, tempRouteMark);
+        NByteVector.resize(ncc->tempRoute1, tempRouteMark);
         return followingSubRuleMatchLength;
     }
 
     // Something matched, attempt repeating. Discard any matches that could have been added by the following sub-rule,
     // TODO: If "Discarding!" never gets printed, remove...
-    if (NVector.size(ncc->matchRoute) != matchRouteMark) NLOGI("sdf", "Discarding!");
-    NVector.resize(ncc->matchRoute, matchRouteMark);
+    if (NByteVector.size(ncc->matchRoute) != matchRouteMark) {
+        NLOGI("sdf", "Discarding!");
+        //NLOGW("sdf", "followingSubRuleMatchLength: %d, size(ncc->matchRoute): %d, matchRouteMark: %d", followingSubRuleMatchLength, NByteVector.size(ncc->matchRoute), matchRouteMark);
+        NByteVector.resize(ncc->matchRoute, matchRouteMark);
+    }
 
     // Repeat,
     int32_t repeatMatchLength = repeatNodeMatch(node, ncc, &text[matchLength]);
     if (repeatMatchLength==-1) {
         // Didn't end properly, discard,
-        NVector.resize(ncc->tempRoute1, tempRouteMark);
+        NByteVector.resize(ncc->tempRoute1, tempRouteMark);
         return -1;
     }
 
@@ -719,7 +763,7 @@ static struct NCC_Node* createRepeatNode(struct NCC* ncc, struct NCC_Node* paren
 
     // Create node,
     struct RepeatNodeData* nodeData = NMALLOC(sizeof(struct RepeatNodeData), "NCC.createRepeatNode() nodeData");
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.REPEAT, nodeData, repeatNodeMatch, 0);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.REPEAT, nodeData, repeatNodeMatch);
     node->deleteTree = repeatNodeDeleteTree;
 
     // Remove parent from the grand-parent and attach this node instead,
@@ -757,29 +801,33 @@ struct AnythingNodeData {
 static int32_t anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct AnythingNodeData* nodeData = node->data;
 
-    int32_t tempRouteMark = NVector.size(ncc->tempRoute1);
-    int32_t totalMatchLength=0;
-    int32_t followingSubRuleMatchLength;
+    uint32_t tempRouteMark = NByteVector.size(ncc->tempRoute1);
+    int32_t  totalMatchLength=0;
+    int32_t  followingSubRuleMatchLength;
     do {
         // Check if the following sub-rule matches,
-        int32_t matchRouteMark = NVector.size(ncc->matchRoute);
+        uint32_t matchRouteMark = NByteVector.size(ncc->matchRoute);
         followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, &text[totalMatchLength]);
         if (followingSubRuleMatchLength>0) goto conclude;
 
         // Following sub-rule didn't match,
-        NVector.resize(ncc->matchRoute, matchRouteMark);
+        NByteVector.resize(ncc->matchRoute, matchRouteMark);
 
         // If text ended,
         if (!text[totalMatchLength]) {
             if (followingSubRuleMatchLength==-1) {
-                NVector.resize(ncc->tempRoute1, tempRouteMark);
+                NByteVector.resize(ncc->tempRoute1, tempRouteMark);
                 return -1;
             }
             goto conclude;
         }
 
         // Text didn't end, advance,
-        NVector.pushBack(ncc->tempRoute1, &node);
+        // TODO: just increment the value and skip it once at the end...
+        switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
+        skipNLiterals(ncc, 1);
+        switchRoutes(&ncc->tempRoute1, &ncc->matchRoute);
+
         totalMatchLength++;
     } while (True);
 
@@ -787,14 +835,6 @@ conclude:
     // Push the anything node route,
     pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
     return totalMatchLength + followingSubRuleMatchLength;
-}
-
-static int32_t anythingNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
-    #ifdef NCC_VERBOSE
-    NLOGI("NCC", "Visited anything node: %s%c%s", NTCOLOR(HIGHLIGHT), text[0], NTCOLOR(STREAM_DEFAULT));
-    #endif
-    struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
-    return nextNode ? 1 + nextNode->followMatchRoute(nextNode, ncc, &text[1]) : 1;
 }
 
 static void anythingNodeDeleteTree(struct NCC_Node* tree) {
@@ -819,7 +859,7 @@ static struct NCC_Node* createAnythingNode(struct NCC* ncc, struct NCC_Node* par
 
     // Create node,
     struct AnythingNodeData* nodeData = NMALLOC(sizeof(struct AnythingNodeData), "NCC.createAnythingNode() nodeData");
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ANYTHING, nodeData, anythingNodeMatch, anythingNodeFollowMatchRoute);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.ANYTHING, nodeData, anythingNodeMatch);
     node->deleteTree = anythingNodeDeleteTree;
     nodeData->followingSubRule = followingSubRule;
 
@@ -846,8 +886,8 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
 
     // Match rule on a temporary route,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
-    int32_t tempRouteMark = NVector.size(ncc->matchRoute);
-    int32_t matchLength = nodeData->rule->tree->match(nodeData->rule->tree, ncc, text);
+    uint32_t tempRouteMark = NByteVector.size(ncc->matchRoute);
+    int32_t  matchLength = nodeData->rule->tree->match(nodeData->rule->tree, ncc, text);
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
 
     // Return immediately if no match,
@@ -856,7 +896,7 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     // Match next nodes,
     int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
     if (nextNodeMatchLength==-1) {
-        NVector.resize(ncc->tempRoute1, tempRouteMark);
+        NByteVector.resize(ncc->tempRoute1, tempRouteMark);
         return -1;
     }
 
@@ -864,21 +904,21 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     if (nodeData->rule->pushVariable || nodeData->rule->onMatchListener) {
 
         // Push 0 to mark the end of the rule route,
-        struct NCC_Node* termination=0;
-        NVector.pushBack(ncc->matchRoute, &termination);
+        NByteVector.pushBack(ncc->matchRoute, 0);
 
-        // Push the rule route,
+        // Push the rule route and this node,
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
+        NByteVector.pushBackBulk(ncc->matchRoute, &node, sizeof(struct NCC_Node*));
 
-        // Push this node,
-        NVector.pushBack(ncc->matchRoute, &node);
-        return matchLength + nextNodeMatchLength;
+        // Push 255 to denote the preceding substitute node,
+        NByteVector.pushBack(ncc->matchRoute, 255);
 
     } else {
-        // Push the rule route,
+        // Push the rule route only,
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
-        return matchLength + nextNodeMatchLength;
     }
+
+    return matchLength + nextNodeMatchLength;
 }
 
 static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
@@ -888,8 +928,15 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     int32_t variablesStackPosition = NVector.size(&ncc->variables);
 
     // Match,
-    struct NCC_Node* nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
-    int32_t matchLength = nextNode ? nextNode->followMatchRoute(nextNode, ncc, text) : 0; // This substitute node can by empty.
+    uint8_t nextValue = NByteVector.get(ncc->matchRoute, NByteVector.size(ncc->matchRoute)-1);
+    int32_t matchLength;
+    if (nextValue) {
+        matchLength = followMatchRoute(ncc, text);
+    } else {
+        // This substitute node can by empty,
+        matchLength = 0;
+        NByteVector.popBack(ncc->matchRoute, &nextValue); // Discard the 0.
+    }
 
     // Perform rule action,
     ncc->currentCallStackBeginning = variablesStackPosition;
@@ -897,7 +944,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     if (nodeData->rule->onMatchListener) nodeData->rule->onMatchListener(ncc, &nodeData->rule->name, newVariablesCount);
 
     // Pop any variables that were not popped,
-    int remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
+    int32_t remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
     for (;remainingVariablesCount; remainingVariablesCount--) {
         // Possible performance improvement: Destroying variables in place without popping, then
         // adjusting the vector size. Or even better, reusing variables.
@@ -922,8 +969,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     #ifdef NCC_VERBOSE
     NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&match.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&match.value), NTCOLOR(STREAM_DEFAULT));
     #endif
-    nextNode=0; NVector.popBack(ncc->matchRoute, &nextNode);
-    return nextNode ? matchLength + nextNode->followMatchRoute(nextNode, ncc, &text[matchLength]) : matchLength;
+    return matchLength;
 }
 
 static void substituteNodeDeleteTree(struct NCC_Node* tree) {
@@ -972,7 +1018,7 @@ static struct NCC_Node* createSubstituteNode(struct NCC* ncc, struct NCC_Node* p
 
     // Create the node,
     struct SubstituteNodeData* nodeData = NMALLOC(sizeof(struct SubstituteNodeData), "NCC.createSubstituteNode() nodeData");
-    struct NCC_Node* node = genericCreateNode(NCC_NodeType.SUBSTITUTE, nodeData, substituteNodeMatch, substituteNodeFollowMatchRoute);
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.SUBSTITUTE, nodeData, substituteNodeMatch);
     node->deleteTree = substituteNodeDeleteTree;
     nodeData->rule = rule;
 
@@ -1030,11 +1076,11 @@ struct NCC* NCC_initializeNCC(struct NCC* ncc) {
     ncc->extraData = 0;
     NVector.initialize(&ncc->rules, 0, sizeof(struct NCC_Rule*));
     NVector.initialize(&ncc->variables, 0, sizeof(struct NCC_Variable));
-    ncc->matchRoute = NVector.create(0, sizeof(struct NCC_Node*));
-    ncc->tempRoute1 = NVector.create(0, sizeof(struct NCC_Node*));
-    ncc->tempRoute2 = NVector.create(0, sizeof(struct NCC_Node*));
-    ncc->tempRoute3 = NVector.create(0, sizeof(struct NCC_Node*));
-    ncc->tempRoute4 = NVector.create(0, sizeof(struct NCC_Node*));
+    ncc->matchRoute = NByteVector.create(0);
+    ncc->tempRoute1 = NByteVector.create(0);
+    ncc->tempRoute2 = NByteVector.create(0);
+    ncc->tempRoute3 = NByteVector.create(0);
+    ncc->tempRoute4 = NByteVector.create(0);
     return ncc;
 }
 
@@ -1055,11 +1101,11 @@ void NCC_destroyNCC(struct NCC* ncc) {
     NVector.destroy(&ncc->variables);
 
     // Routes,
-    NVector.destroyAndFree(ncc->matchRoute);
-    NVector.destroyAndFree(ncc->tempRoute1);
-    NVector.destroyAndFree(ncc->tempRoute2);
-    NVector.destroyAndFree(ncc->tempRoute3);
-    NVector.destroyAndFree(ncc->tempRoute4);
+    NByteVector.destroyAndFree(ncc->matchRoute);
+    NByteVector.destroyAndFree(ncc->tempRoute1);
+    NByteVector.destroyAndFree(ncc->tempRoute2);
+    NByteVector.destroyAndFree(ncc->tempRoute3);
+    NByteVector.destroyAndFree(ncc->tempRoute4);
 }
 
 void NCC_destroyAndFreeNCC(struct NCC* ncc) {
@@ -1090,22 +1136,42 @@ static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName) {
     return 0;
 }
 
-static void switchRoutes(struct NVector** route1, struct NVector** route2) {
-    struct NVector* temp = *route1;
+static void switchRoutes(struct NByteVector** route1, struct NByteVector** route2) {
+    struct NByteVector* temp = *route1;
     *route1 = *route2;
     *route2 = temp;
 }
 
-static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NVector* tempRoute, int32_t tempRouteMark) {
-    // Pops from the temp route until the mark then pushes them into the match route.
-    int32_t currentMatchRoutePosition = NVector.size(ncc->matchRoute);
-    int32_t newNodesCount = NVector.size(tempRoute) - tempRouteMark;
-    NVector.resize(ncc->matchRoute, currentMatchRoutePosition + newNodesCount);
+static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tempRoute, int32_t tempRouteMark) {
+
+    // Effectively pops bytes from the temp route until the mark then pushes them into the match route.
+    int32_t tempRouteSize = NByteVector.size(tempRoute);
+    /*
+    int32_t newBytesCount = tempRouteSize - tempRouteMark;
+    if (!newBytesCount) return;
+
+    // Combine until no more combination is possible,
+    int32_t remainingBytesStartIndex = tempRouteMark;
+    while (remainingBytesStartIndex < tempRouteSize) {
+        uint8_t currentValue = NByteVector.get(tempRoute, remainingBytesStartIndex);
+        if ((currentValue==0) || (currentValue==255)) break;
+        remainingBytesStartIndex++;
+        if (!skipNLiterals(ncc, currentValue)) break;
+    }
+    */
+
+    int32_t remainingBytesStartIndex = tempRouteMark;
+
+    // Move the rest,
+    int32_t remainingBytesCount = tempRouteSize - remainingBytesStartIndex;
+    if (!remainingBytesCount) return;
+    int32_t currentMatchRoutePosition = NByteVector.size(ncc->matchRoute);
+    NByteVector.resize(ncc->matchRoute, currentMatchRoutePosition + remainingBytesCount);
     NSystemUtils.memcpy(
-            NVector.get(ncc->matchRoute, currentMatchRoutePosition),
-            NVector.get(tempRoute, tempRouteMark),
-            newNodesCount*sizeof(struct NCC_Node*));
-    NVector.resize(tempRoute, tempRouteMark);
+            &ncc->matchRoute->objects[currentMatchRoutePosition],
+            &tempRoute->objects[remainingBytesStartIndex],
+            remainingBytesCount);
+    NByteVector.resize(tempRoute, tempRouteMark);
 }
 
 int32_t NCC_match(struct NCC* ncc, const char* text) {
@@ -1113,8 +1179,8 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     // Find the longest match,
     int32_t maxMatchLength=-1;
     struct NCC_Rule* maxMatchRule=0;
-    struct NVector maxMatchRoute;
-    NVector.initialize(&maxMatchRoute, 0, sizeof(struct NCC_Node*));
+    struct NByteVector maxMatchRoute;
+    NByteVector.initialize(&maxMatchRoute, 0);
 
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
 
@@ -1122,11 +1188,11 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
         if (!rule->rootRule) continue;
 
         // Reset routes,
-        NVector.reset(ncc->matchRoute);
-        NVector.reset(ncc->tempRoute1);
-        NVector.reset(ncc->tempRoute2);
-        NVector.reset(ncc->tempRoute3);
-        NVector.reset(ncc->tempRoute4);
+        NByteVector.clear(ncc->matchRoute);
+        NByteVector.clear(ncc->tempRoute1);
+        NByteVector.clear(ncc->tempRoute2);
+        NByteVector.clear(ncc->tempRoute3);
+        NByteVector.clear(ncc->tempRoute4);
 
         // Match rule,
         int32_t matchLength = rule->tree->match(rule->tree, ncc, text);
@@ -1134,27 +1200,26 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
             // Keep route,
             maxMatchLength = matchLength;
             maxMatchRule = rule;
-            NVector.resize(&maxMatchRoute, NVector.size(ncc->matchRoute));
+            NByteVector.resize(&maxMatchRoute, NByteVector.size(ncc->matchRoute));
             NSystemUtils.memcpy(
-                    NVector.get( &maxMatchRoute, 0),
-                    NVector.get(ncc->matchRoute, 0),
-                    NVector.size(ncc->matchRoute)*sizeof(struct NCC_Node*));
+                    maxMatchRoute.objects,
+                    ncc->matchRoute->objects,
+                    NByteVector.size(ncc->matchRoute));
         }
     }
 
     if (maxMatchLength==-1) goto conclude;
 
     // Follow the longest match route,
-    if (NVector.size(&maxMatchRoute)) {
+    if (NByteVector.size(&maxMatchRoute)) {
 
         // Set the match route,
-        NVector.reset(ncc->matchRoute);
+        NByteVector.clear(ncc->matchRoute);
+        // TODO: don't push, just switch...
         pushTempRouteIntoMatchRoute(ncc, &maxMatchRoute, 0);
 
         // Follow route,
-        struct NCC_Node* routeStart;
-        NVector.popBack(ncc->matchRoute, &routeStart);
-        routeStart->followMatchRoute(routeStart, ncc, text);
+        followMatchRoute(ncc, text);
     }
 
 conclude:
@@ -1165,10 +1230,10 @@ conclude:
 
     // Empty the variables stack,
     for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) NCC_destroyVariable(NVector.get(&ncc->variables, i));
-    NVector.reset(&ncc->variables);
+    NVector.clear(&ncc->variables);
 
     // Destroy the max match route,
-    NVector.destroy(&maxMatchRoute);
+    NByteVector.destroy(&maxMatchRoute);
 
     return maxMatchLength;
 }
