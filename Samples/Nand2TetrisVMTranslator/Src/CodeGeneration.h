@@ -14,10 +14,10 @@ struct OutputData {
 struct NCC;
 
 typedef enum {
-    VARIABLES=1,
-    STACK_POINTER=2,
-    SEGMENTS=4,
-    SYS_INIT=8
+    VARIABLES=1u,
+    STACK_POINTER=2u,
+    SEGMENTS=4u,
+    SYS_INIT=8u
 } InitializationFlags;
 
 void               emitCode(struct NCC* ncc, const char* format, ...);

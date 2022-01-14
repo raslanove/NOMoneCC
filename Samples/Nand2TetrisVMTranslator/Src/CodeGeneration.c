@@ -169,11 +169,9 @@ static void emitPushCode(struct NCC* ncc, const char* modifier, const char* offs
 
         // Prepare static variable name,
         struct NString staticVariableName;
-        NString.initialize(&staticVariableName);
-
         struct OutputData* outputData = (struct OutputData*) ncc->extraData;
         int32_t index = NCString.parseInteger(offsetOrValue);
-        NString.set(&staticVariableName, "%s.%d", NString.get(&outputData->fileName), index);
+        NString.initialize(&staticVariableName, "%s.%d", NString.get(&outputData->fileName), index);
 
         // Code:
         //   // push static index
@@ -257,11 +255,9 @@ static void emitPopCode(struct NCC* ncc, const char* modifier, const char* offse
 
         // Prepare static variable name,
         struct NString staticVariableName;
-        NString.initialize(&staticVariableName);
-
         struct OutputData* outputData = (struct OutputData*) ncc->extraData;
         int32_t index = NCString.parseInteger(offset);
-        NString.set(&staticVariableName, "%s.%d", NString.get(&outputData->fileName), index);
+        NString.initialize(&staticVariableName, "%s.%d", NString.get(&outputData->fileName), index);
 
         // Code:
         //   // pop static index

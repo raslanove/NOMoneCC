@@ -10,38 +10,38 @@ static void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variab
 static void specifyLanguage(struct NCC* ncc) {
 
     // Elements,
-    NCC_addRule(ncc, "Empty", "", 0, False);
-    NCC_addRule(ncc, "WhiteSpace", "{\\ |\t|\r|\n}^*", 0, False);
-    NCC_addRule(ncc, "NotWhiteSpaceLiteral", "\x01-\x08 | \x0b-\x0c | \x0e-\x1f | \x21-\xff", 0, False);
-    NCC_addRule(ncc, "LineEnd", "\n|${Empty}", 0, False);
-    NCC_addRule(ncc, "LineComment", "//*${LineEnd}", 0, False);
-    NCC_addRule(ncc, "Integer", "0-9 | 1-9 0-9^*", 0, False);
-    NCC_addRule(ncc, "Identifier", "${NotWhiteSpaceLiteral}^*", 0, False);
-    NCC_addRule(ncc, "Label", "label ${WhiteSpace} ${Identifier}", labelListener, False);
-    NCC_addRule(ncc, "StackModifier", "${NotWhiteSpaceLiteral}^*", 0, False);
+    NCC_addRule(ncc, "Empty", "", 0, False, True);
+    NCC_addRule(ncc, "WhiteSpace", "{\\ |\t|\r|\n}^*", 0, False, True);
+    NCC_addRule(ncc, "NotWhiteSpaceLiteral", "\x01-\x08 | \x0b-\x0c | \x0e-\x1f | \x21-\xff", 0, False, True);
+    NCC_addRule(ncc, "LineEnd", "\n|${Empty}", 0, False, True);
+    NCC_addRule(ncc, "LineComment", "//*${LineEnd}", 0, False, True);
+    NCC_addRule(ncc, "Integer", "0-9 | 1-9 0-9^*", 0, False, True);
+    NCC_addRule(ncc, "Identifier", "${NotWhiteSpaceLiteral}^*", 0, False, True);
+    NCC_addRule(ncc, "Label", "label ${WhiteSpace} ${Identifier}", labelListener, False, True);
+    NCC_addRule(ncc, "StackModifier", "${NotWhiteSpaceLiteral}^*", 0, False, True);
 
     // Instructions,
-    NCC_addRule(ncc, "Push", "push ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}", pushListener, False);
-    NCC_addRule(ncc, "Pop" , "pop  ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}",  popListener, False);
-    NCC_addRule(ncc, "Add", "add", addListener, False);
-    NCC_addRule(ncc, "Sub", "sub", subListener, False);
-    NCC_addRule(ncc, "And", "and", andListener, False);
-    NCC_addRule(ncc, "Or" , "or" ,  orListener, False);
-    NCC_addRule(ncc, "Eq" , "eq" ,  eqListener, False);
-    NCC_addRule(ncc, "LT" , "lt" ,  ltListener, False);
-    NCC_addRule(ncc, "GT" , "gt" ,  gtListener, False);
-    NCC_addRule(ncc, "Neg", "neg", negListener, False);
-    NCC_addRule(ncc, "Not", "not", notListener, False);
-    NCC_addRule(ncc, "Jmp", "goto ${WhiteSpace} ${Identifier}", jumpListener, False);
-    NCC_addRule(ncc, "JNZ", "if\\-goto ${WhiteSpace} ${Identifier}", jumpNotZeroListener, False);
-    NCC_addRule(ncc, "Function", "function ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", functionListener, False);
-    NCC_addRule(ncc, "Return", "return", returnListener, False);
-    NCC_addRule(ncc, "Call", "call ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", callListener, False);
+    NCC_addRule(ncc, "Push", "push ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}", pushListener, False, True);
+    NCC_addRule(ncc, "Pop" , "pop  ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}",  popListener, False, True);
+    NCC_addRule(ncc, "Add", "add", addListener, False, True);
+    NCC_addRule(ncc, "Sub", "sub", subListener, False, True);
+    NCC_addRule(ncc, "And", "and", andListener, False, True);
+    NCC_addRule(ncc, "Or" , "or" ,  orListener, False, True);
+    NCC_addRule(ncc, "Eq" , "eq" ,  eqListener, False, True);
+    NCC_addRule(ncc, "LT" , "lt" ,  ltListener, False, True);
+    NCC_addRule(ncc, "GT" , "gt" ,  gtListener, False, True);
+    NCC_addRule(ncc, "Neg", "neg", negListener, False, True);
+    NCC_addRule(ncc, "Not", "not", notListener, False, True);
+    NCC_addRule(ncc, "Jmp", "goto ${WhiteSpace} ${Identifier}", jumpListener, False, True);
+    NCC_addRule(ncc, "JNZ", "if\\-goto ${WhiteSpace} ${Identifier}", jumpNotZeroListener, False, True);
+    NCC_addRule(ncc, "Function", "function ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", functionListener, False, True);
+    NCC_addRule(ncc, "Return", "return", returnListener, False, True);
+    NCC_addRule(ncc, "Call", "call ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", callListener, False, True);
 
-    NCC_addRule(ncc, "Instruction", "${Push} | ${Pop} | ${Add} | ${Sub} | ${And} | ${Or} | ${Eq} | ${LT} | ${GT} | ${Neg} | ${Not} | ${Jmp} | ${JNZ} | ${Function} | ${Return} | ${Call}", 0, False);
+    NCC_addRule(ncc, "Instruction", "${Push} | ${Pop} | ${Add} | ${Sub} | ${And} | ${Or} | ${Eq} | ${LT} | ${GT} | ${Neg} | ${Not} | ${Jmp} | ${JNZ} | ${Function} | ${Return} | ${Call}", 0, False, True);
 
     // Document,
-    NCC_addRule(ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Label} | ${Instruction}}^*", 0, True);
+    NCC_addRule(ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Label} | ${Instruction}}^*", 0, True, True);
 }
 
 static void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
@@ -181,8 +181,8 @@ void NMain(int argc, char *argv[]) {
 
     // Add data to accumulate output,
     struct OutputData outputData;
-    NString.initialize(&outputData.fileName);
-    NString.initialize(&outputData.code);
+    NString.initialize(&outputData.fileName, "");
+    NString.initialize(&outputData.code, "");
     outputData.lastLabelIndex = 0;
     ncc.extraData = &outputData;
 

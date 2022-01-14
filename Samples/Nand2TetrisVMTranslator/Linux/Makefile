@@ -1,7 +1,7 @@
 
 LINKER_FLAGS = 
 
-CFLAGS = -I../../../Src/Includes/ -I../../../Src/NOMoneStdLib/Includes/ -DDESKTOP -DNVERBOSE=1 -DNPROFILE_MEMORY=1 -g -MMD# g=>generate debug info. MMD=>generate dependency files.
+CFLAGS = -I../../../Src/Includes/ -I../../../Src/NOMoneStdLib/Includes/ -DDESKTOP -DNVERBOSE=1 -DNPROFILE_MEMORY=3 -g -MMD# g=>generate debug info. MMD=>generate dependency files.
 
 # Clang is more picky. Using it can help us pin-point more issues.
 CC = clang
