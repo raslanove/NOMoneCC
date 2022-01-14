@@ -626,13 +626,11 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
     const char* subRuleBeginning = (*in_out_rule)++;
 
     // Find the matching closing braces,
-    // TODO: remove the dependency on byte vector, use memcpy...
-    struct NByteVector subRule;
-    NByteVector.initialize(&subRule, 2);
     int32_t closingBracesRequired=1;
     boolean subRuleComplete=False;
-    for (int32_t i=0;; i++) {
-        char currentChar = ((*in_out_rule)++)[0];
+    int32_t subRuleLength=0, spacesCount=0;
+    do {
+        char currentChar = (*in_out_rule)[subRuleLength];
         if (currentChar=='{') {
             closingBracesRequired++;
         } else if (currentChar=='}') {
@@ -640,28 +638,36 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
                 subRuleComplete = True;
                 break;
             }
+        } else if (currentChar == ' ') {
+            spacesCount++;
         } else if (!currentChar) {
             break;
         }
-        NByteVector.pushBack(&subRule, currentChar);
-    }
-    NByteVector.pushBack(&subRule, 0);
+        subRuleLength++;
+    } while (True);
 
     // Make sure the sub-rule is well-formed,
-    if (!NByteVector.size(&subRule)) {
+    if ((subRuleLength-spacesCount) == 0) {
         NERROR("NCC", "createSubRuleNode(): can't have empty sub-rules %s{}%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
-        goto malformedSubRuleExit;
+        return 0;
     }
     if (!subRuleComplete) {
         NERROR("NCC", "createSubRuleNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), subRuleBeginning, NTCOLOR(STREAM_DEFAULT));
-        goto malformedSubRuleExit;
+        return 0;
     }
 
+    // Copy the sub-rule (because the rule text is const char*, can't substitute a zero wherever I need),
+    char* subRule = NMALLOC(subRuleLength+1, "NCC.createSubRuleNode() subRule");
+    NSystemUtils.memcpy(subRule, *in_out_rule, subRuleLength);
+    subRule[subRuleLength] = 0;        // Terminate the string.
+    (*in_out_rule) += subRuleLength+1; // Advance the rule pointer to right after the closing brace.
+
     // Create sub-rule tree,
-    struct NCC_Node* subRuleTree = constructRuleTree(ncc, (const char *) subRule.objects);
+    struct NCC_Node* subRuleTree = constructRuleTree(ncc, subRule);
+    NFREE(subRule, "NCC.createSubRuleNode() subRule");
     if (!subRuleTree) {
         NERROR("NCC", "createSubRuleNode(): couldn't create sub-rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), subRuleBeginning, NTCOLOR(STREAM_DEFAULT));
-        goto  malformedSubRuleExit;
+        return 0;
     }
 
     // Create the sub-rule node,
@@ -673,14 +679,8 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
     #ifdef NCC_VERBOSE
     NLOGI("NCC", "Created sub-rule node: %s{%s}%s", NTCOLOR(HIGHLIGHT), subRule.objects, NTCOLOR(STREAM_DEFAULT));
     #endif
-    NByteVector.destroy(&subRule);
-
     parentNode->setNextNode(parentNode, node);
     return node;
-
-malformedSubRuleExit:
-    NByteVector.destroy(&subRule);
-    return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -801,7 +801,6 @@ struct AnythingNodeData {
 static int32_t anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct AnythingNodeData* nodeData = node->data;
 
-    uint32_t tempRouteMark = NByteVector.size(ncc->tempRoute1);
     int32_t  totalMatchLength=0;
     int32_t  followingSubRuleMatchLength;
     do {
@@ -810,30 +809,21 @@ static int32_t anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const c
         followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, &text[totalMatchLength]);
         if (followingSubRuleMatchLength>0) goto conclude;
 
-        // Following sub-rule didn't match,
+        // Following sub-rule didn't match, or had a zero-length match,
         NByteVector.resize(ncc->matchRoute, matchRouteMark);
 
         // If text ended,
         if (!text[totalMatchLength]) {
-            if (followingSubRuleMatchLength==-1) {
-                NByteVector.resize(ncc->tempRoute1, tempRouteMark);
-                return -1;
-            }
+            if (followingSubRuleMatchLength==-1) return -1;
             goto conclude;
         }
 
         // Text didn't end, advance,
-        // TODO: just increment the value and skip it once at the end...
-        switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
-        skipNLiterals(ncc, 1);
-        switchRoutes(&ncc->tempRoute1, &ncc->matchRoute);
-
         totalMatchLength++;
     } while (True);
 
 conclude:
-    // Push the anything node route,
-    pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
+    skipNLiterals(ncc, totalMatchLength);
     return totalMatchLength + followingSubRuleMatchLength;
 }
 
@@ -1115,11 +1105,15 @@ void NCC_destroyAndFreeNCC(struct NCC* ncc) {
 
 boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable) {
 
-    // TODO: check for existing name...
+    // Check if a rule with this name already exists,
+    if (getRule(ncc, name)) {
+        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s. A rule with the same name exists.", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT));
+        return False;
+    }
 
     struct NCC_Rule* rule = createRule(ncc, name, ruleText, onMatchListener, rootRule, pushVariable);
     if (!rule) {
-        NERROR("NCC", "NCC_addRule(): unable to create rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
@@ -1147,6 +1141,7 @@ static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tem
     // Effectively pops bytes from the temp route until the mark then pushes them into the match route.
     int32_t tempRouteSize = NByteVector.size(tempRoute);
     /*
+    // TODO: fix!
     int32_t newBytesCount = tempRouteSize - tempRouteMark;
     if (!newBytesCount) return;
 
@@ -1179,8 +1174,7 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     // Find the longest match,
     int32_t maxMatchLength=-1;
     struct NCC_Rule* maxMatchRule=0;
-    struct NByteVector maxMatchRoute;
-    NByteVector.initialize(&maxMatchRoute, 0);
+    struct NByteVector* maxMatchRoute = NByteVector.create(0);
 
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
 
@@ -1200,9 +1194,9 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
             // Keep route,
             maxMatchLength = matchLength;
             maxMatchRule = rule;
-            NByteVector.resize(&maxMatchRoute, NByteVector.size(ncc->matchRoute));
+            NByteVector.resize(maxMatchRoute, NByteVector.size(ncc->matchRoute));
             NSystemUtils.memcpy(
-                    maxMatchRoute.objects,
+                    maxMatchRoute->objects,
                     ncc->matchRoute->objects,
                     NByteVector.size(ncc->matchRoute));
         }
@@ -1211,18 +1205,16 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     if (maxMatchLength==-1) goto conclude;
 
     // Follow the longest match route,
-    if (NByteVector.size(&maxMatchRoute)) {
+    if (NByteVector.size(maxMatchRoute)) {
 
-        // Set the match route,
+        // Follow the max match route,
         NByteVector.clear(ncc->matchRoute);
-        // TODO: don't push, just switch...
-        pushTempRouteIntoMatchRoute(ncc, &maxMatchRoute, 0);
-
-        // Follow route,
+        switchRoutes(&ncc->matchRoute, &maxMatchRoute);
         followMatchRoute(ncc, text);
+        switchRoutes(&ncc->matchRoute, &maxMatchRoute);
     }
 
-conclude:
+    conclude:
 
     // Perform rule action,
     ncc->currentCallStackBeginning = 0;
@@ -1233,7 +1225,7 @@ conclude:
     NVector.clear(&ncc->variables);
 
     // Destroy the max match route,
-    NByteVector.destroy(&maxMatchRoute);
+    NByteVector.destroyAndFree(maxMatchRoute);
 
     return maxMatchLength;
 }
