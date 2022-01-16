@@ -49,8 +49,9 @@
 //
 // TODO: bytes indicating skipped literals should be combined together. The code is there, just commented
 // out because it's not working properly. Most probably it's because we can't discard stack history if it
-// was combined with what came before. A suggested fix is to push a delimeter after switching stacks to
-// prevent combining?
+// was combined with what came before. A suggested fix is to push a delimiter after switching stacks to
+// prevent combining? Pushing and discarding the delimiter should be carefully woven together with the
+// stack switching calls.
 
 static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule);
 static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule);
@@ -182,7 +183,7 @@ static void skipNLiteralsNoCombine(struct NCC* ncc, uint32_t n) {
 // Returns true if combined successfully, False if just pushed.
 static boolean skipNLiterals(struct NCC* ncc, uint32_t n) {
 
-    // TODO: fix!
+    // TODO: fix combining!
     if (True) {
         skipNLiteralsNoCombine(ncc, n);
         return False;
@@ -1141,7 +1142,7 @@ static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tem
     // Effectively pops bytes from the temp route until the mark then pushes them into the match route.
     int32_t tempRouteSize = NByteVector.size(tempRoute);
     /*
-    // TODO: fix!
+    // TODO: fix combining!
     int32_t newBytesCount = tempRouteSize - tempRouteMark;
     if (!newBytesCount) return;
 
