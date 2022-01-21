@@ -918,7 +918,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     struct SubstituteNodeData *nodeData = node->data;
 
     // Remember the variables stack position,
-    int32_t variablesStackPosition = NVector.size(&ncc->variables);
+    uint32_t variablesStackPosition = NVector.size(&ncc->variables);
 
     // Match,
     uint8_t nextValue = NByteVector.get(ncc->matchRoute, NByteVector.size(ncc->matchRoute)-1);
@@ -933,7 +933,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
 
     // Perform rule action,
     ncc->currentCallStackBeginning = variablesStackPosition;
-    int32_t newVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
+    uint32_t newVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
     if (nodeData->rule->onMatchListener) nodeData->rule->onMatchListener(ncc, &nodeData->rule->name, newVariablesCount);
 
     // Pop any variables that were not popped,
@@ -1235,7 +1235,7 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     return maxMatchLength;
 }
 
-boolean NCC_popVariable(struct NCC* ncc, struct NCC_Variable* outVariable) {
+boolean NCC_popRuleVariable(struct NCC* ncc, struct NCC_Variable* outVariable) {
 
     if (NVector.size(&ncc->variables) <= ncc->currentCallStackBeginning) return False;
 
@@ -1243,4 +1243,20 @@ boolean NCC_popVariable(struct NCC* ncc, struct NCC_Variable* outVariable) {
     if (!NVector.popBack(&ncc->variables, outVariable)) return False;
 
     return True;
+}
+
+boolean NCC_getRuleVariable(struct NCC* ncc, uint32_t index, struct NCC_Variable* outVariable) {
+
+    int64_t availableVariablesCount = (int64_t) NVector.size(&ncc->variables) - ncc->currentCallStackBeginning;
+    if (index >= availableVariablesCount) return False;
+
+    // The variable needn't be initialized, we'll pop into it,
+    *outVariable = *(struct NCC_Variable*) NVector.get(&ncc->variables, ncc->currentCallStackBeginning + index);
+
+    return True;
+}
+
+void NCC_discardRuleVariables(struct NCC* ncc) {
+    struct NCC_Variable variable;
+    while (NCC_popRuleVariable(ncc, &variable)) NCC_destroyVariable(&variable);
 }

@@ -63,7 +63,7 @@ struct NCC {
     struct NVector rules; // Pointers to rules, not rules, so that they don't get relocated when more rules are added.
     struct NVector variables;
     struct NByteVector *matchRoute, *tempRoute1, *tempRoute2, *tempRoute3, *tempRoute4; // Pointers to nodes. TODO: maybe turn them into an array?
-    int32_t currentCallStackBeginning;
+    uint32_t currentCallStackBeginning;
 };
 
 // TODO: Should take a structure instead of multiple variables.
@@ -79,7 +79,9 @@ void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
 boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
 int32_t NCC_match(struct NCC* ncc, const char* text); // Returns match length if matched, 0 if rejected.
-boolean NCC_popVariable(struct NCC* ncc, struct NCC_Variable* outVariable);
+boolean NCC_popRuleVariable(struct NCC* ncc, struct NCC_Variable* outVariable); // Pops variables of the currently active rule.
+boolean NCC_getRuleVariable(struct NCC* ncc, uint32_t index, struct NCC_Variable* outVariable); // Gets variables of the currently active rule.
+void NCC_discardRuleVariables(struct NCC* ncc); // Discards variables of the currently active rule.
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Variable
