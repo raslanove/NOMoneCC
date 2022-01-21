@@ -77,7 +77,7 @@ struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
-boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable);
+boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
 int32_t NCC_match(struct NCC* ncc, const char* text); // Returns match length if matched, 0 if rejected.
 boolean NCC_popVariable(struct NCC* ncc, struct NCC_Variable* outVariable);
 

@@ -118,9 +118,10 @@ struct NCC_Rule {
     NCC_onMatchListener onMatchListener;
     boolean rootRule; // True: can be matched alone. False: must be part of some other rule.
     boolean pushVariable; // False: matches, but the value is ignored.
+    boolean popsChildrenVariables; // False: keeps the variables of nested rules.
 };
 
-static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable) {
+static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
 
     // Create rule tree,
     struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
@@ -136,6 +137,7 @@ static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char
     rule->onMatchListener = onMatchListener;
     rule->rootRule = rootRule;
     rule->pushVariable = pushVariable;
+    rule->popsChildrenVariables = popsChildrenVariables;
 
     return rule;
 }
@@ -935,13 +937,15 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     if (nodeData->rule->onMatchListener) nodeData->rule->onMatchListener(ncc, &nodeData->rule->name, newVariablesCount);
 
     // Pop any variables that were not popped,
-    int32_t remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
-    for (;remainingVariablesCount; remainingVariablesCount--) {
-        // Possible performance improvement: Destroying variables in place without popping, then
-        // adjusting the vector size. Or even better, reusing variables.
-        struct NCC_Variable currentVariable;
-        NVector.popBack(&ncc->variables, &currentVariable);
-        NCC_destroyVariable(&currentVariable);
+    if (nodeData->rule->popsChildrenVariables) {
+        int32_t remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
+        for (;remainingVariablesCount; remainingVariablesCount--) {
+            // Possible performance improvement: Destroying variables in place without popping, then
+            // adjusting the vector size. Or even better, reusing variables.
+            struct NCC_Variable currentVariable;
+            NVector.popBack(&ncc->variables, &currentVariable);
+            NCC_destroyVariable(&currentVariable);
+        }
     }
 
     // Save the match,
@@ -1104,7 +1108,7 @@ void NCC_destroyAndFreeNCC(struct NCC* ncc) {
     NFREE(ncc, "NCC.NCC_destroyAndFreeNCC() ncc");
 }
 
-boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable) {
+boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
 
     // Check if a rule with this name already exists,
     if (getRule(ncc, name)) {
@@ -1112,7 +1116,7 @@ boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC
         return False;
     }
 
-    struct NCC_Rule* rule = createRule(ncc, name, ruleText, onMatchListener, rootRule, pushVariable);
+    struct NCC_Rule* rule = createRule(ncc, name, ruleText, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
     if (!rule) {
         NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
