@@ -70,7 +70,7 @@ struct NCC_Node {
     struct NCC_Node* previousNode;
     struct NCC_Node*     nextNode;
     // TODO: remove all function pointers....
-    int32_t (*      match     )(struct NCC_Node* node, struct NCC* ncc, const char* text); // Returns match length if matched, -1 if rejected.
+    int32_t (*match)(struct NCC_Node* node, struct NCC* ncc, const char* text); // Returns match length if matched, -1 if rejected.
     void (*setPreviousNode)(struct NCC_Node* node, struct NCC_Node* previousNode);
     void (*setNextNode    )(struct NCC_Node* node, struct NCC_Node*     nextNode);
     struct NCC_Node* (*getPreviousNode)(struct NCC_Node* node);
