@@ -89,7 +89,7 @@ void NCC_discardRuleVariables(struct NCC* ncc); // Discards variables of the cur
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct NCC_Variable {
-    struct NString name;
+    const char* name;
     struct NString value;
 };
 

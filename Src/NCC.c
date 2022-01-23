@@ -98,13 +98,12 @@ const struct NCC_NodeType NCC_NodeType = {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct NCC_Variable* NCC_initializeVariable(struct NCC_Variable* variable, const char* name, const char* value) {
-    NString.initialize(&variable->name , "%s", name);
+    variable->name = name;
     NString.initialize(&variable->value, "%s", value);
     return variable;
 }
 
 void NCC_destroyVariable(struct NCC_Variable* variable) {
-    NString.destroy(&variable->name );
     NString.destroy(&variable->value);
 }
 
