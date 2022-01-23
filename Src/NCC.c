@@ -45,7 +45,7 @@
 //   constructed in an NByteVector. We push single bytes or node pointers according to the following:
 //     0     : rule end marker.
 //     1->254: skip this number of literals.
-//     255   : rule beginning marker. Right afer this, a substitute node pointer was pushed.
+//     255   : rule beginning marker. Right afer this, a substitute node index was pushed.
 //
 // TODO: bytes indicating skipped literals should be combined together. The code is there, just commented
 // out because it's not working properly. Most probably it's because we can't discard stack history if it
@@ -58,7 +58,7 @@ static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode
 static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName);
 static void switchRoutes(struct NByteVector** route1, struct NByteVector** route2);
 static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tempRoute, int32_t tempRouteMark);
-static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text);
+static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC* ncc, const char* text);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Node
@@ -115,6 +115,7 @@ void NCC_destroyVariable(struct NCC_Variable* variable) {
 struct NCC_Rule {
     struct NString name;
     struct NCC_Node* tree;
+    uint32_t index;
     NCC_onMatchListener onMatchListener;
     boolean rootRule; // True: can be matched alone. False: must be part of some other rule.
     boolean pushVariable; // False: matches, but the value is ignored.
@@ -212,16 +213,16 @@ static int32_t followMatchRoute(struct NCC* ncc, const char* text) {
     uint8_t currentValue=0;
     while (NByteVector.popBack(ncc->matchRoute, &currentValue)) {
 
-
         if (currentValue==0) {
             // This rule just ended,
             break;
         } else if (currentValue == 255) {
 
-            // If following is a substitute node,
-            struct NCC_Node* node;
-            NByteVector.popBackBulk(ncc->matchRoute, &node, sizeof(struct NCC_Node*));
-            matchLength += substituteNodeFollowMatchRoute(node, ncc, &text[matchLength]);
+            // If following is a substitute node index,
+            uint32_t ruleIndex = 0;
+            NByteVector.popBackBulk(ncc->matchRoute, &ruleIndex, ncc->ruleIndexSizeBytes);
+            struct NCC_Rule* rule = *((struct NCC_Rule**) NVector.get(&ncc->rules, ruleIndex));
+            matchLength += substituteNodeFollowMatchRoute(rule, ncc, &text[matchLength]);
             continue;
         }
 
@@ -894,16 +895,16 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     }
 
     // Check if pushing this node is useful,
-    if (nodeData->rule->pushVariable || nodeData->rule->onMatchListener) {
+    if (nodeData->rule->pushVariable || nodeData->rule->onMatchListener || nodeData->rule->popsChildrenVariables) {
 
         // Push 0 to mark the end of the rule route,
         NByteVector.pushBack(ncc->matchRoute, 0);
 
-        // Push the rule route and this node,
+        // Push the rule route and this node's index,
         pushTempRouteIntoMatchRoute(ncc, ncc->tempRoute1, tempRouteMark);
-        NByteVector.pushBackBulk(ncc->matchRoute, &node, sizeof(struct NCC_Node*));
+        NByteVector.pushBackBulk(ncc->matchRoute, &nodeData->rule->index, ncc->ruleIndexSizeBytes);
 
-        // Push 255 to denote the preceding substitute node,
+        // Push 255 to denote the preceding substitute node index,
         NByteVector.pushBack(ncc->matchRoute, 255);
 
     } else {
@@ -914,8 +915,7 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     return matchLength + nextNodeMatchLength;
 }
 
-static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC* ncc, const char* text) {
-    struct SubstituteNodeData *nodeData = node->data;
+static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC* ncc, const char* text) {
 
     // Remember the variables stack position,
     uint32_t variablesStackPosition = NVector.size(&ncc->variables);
@@ -934,10 +934,10 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     // Perform rule action,
     ncc->currentCallStackBeginning = variablesStackPosition;
     uint32_t newVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
-    if (nodeData->rule->onMatchListener) nodeData->rule->onMatchListener(ncc, &nodeData->rule->name, newVariablesCount);
+    if (rule->onMatchListener) rule->onMatchListener(ncc, &rule->name, newVariablesCount);
 
     // Pop any variables that were not popped,
-    if (nodeData->rule->popsChildrenVariables) {
+    if (rule->popsChildrenVariables) {
         int32_t remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
         for (;remainingVariablesCount; remainingVariablesCount--) {
             // Possible performance improvement: Destroying variables in place without popping, then
@@ -949,13 +949,13 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Node* node, struct NCC*
     }
 
     // Save the match,
-    if (nodeData->rule->pushVariable) {
+    if (rule->pushVariable) {
         char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
         NSystemUtils.memcpy(matchedText, text, matchLength);
         matchedText[matchLength] = 0;
 
         struct NCC_Variable match;
-        NCC_initializeVariable(&match, NString.get(&nodeData->rule->name), matchedText);
+        NCC_initializeVariable(&match, NString.get(&rule->name), matchedText);
         NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
         NVector.pushBack(&ncc->variables, &match);
     }
@@ -1120,6 +1120,18 @@ boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC
     if (!rule) {
         NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
+    }
+
+    // Set the rule index and the rule index size,
+    rule->index = NVector.size(&ncc->rules);
+    if (rule->index < 256) {
+        ncc->ruleIndexSizeBytes = 1;
+    } else if (rule->index < 65536) {
+        ncc->ruleIndexSizeBytes = 2;
+    } else if (rule->index < 16777216) {
+        ncc->ruleIndexSizeBytes = 3;
+    } else {
+        ncc->ruleIndexSizeBytes = 4;
     }
 
     NVector.pushBack(&ncc->rules, &rule);

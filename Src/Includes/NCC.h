@@ -64,6 +64,7 @@ struct NCC {
     struct NVector variables;
     struct NByteVector *matchRoute, *tempRoute1, *tempRoute2, *tempRoute3, *tempRoute4; // Pointers to nodes. TODO: maybe turn them into an array?
     uint32_t currentCallStackBeginning;
+    uint32_t ruleIndexSizeBytes;
 };
 
 // TODO: Should take a structure instead of multiple variables.
