@@ -327,6 +327,31 @@ static struct NCC_Node* createLiteralsNode(const char* literals) {
     return node;
 }
 
+static struct NCC_Node* breakLastLiteralIfNeeded(struct NCC_Node* literalsNode) {
+
+    // If the node is a literals node with more than one literal, break the last literal apart,
+    if (literalsNode->type == NCC_NodeType.LITERALS) {
+        struct LiteralsNodeData* nodeData = literalsNode->data;
+        int32_t literalsCount = NString.length(&nodeData->literals);
+        if (literalsCount>1) {
+
+            // Create a new child literals node for the last literal,
+            char* literals = (char*) NString.get(&nodeData->literals);
+            char* lastLiteral = &literals[literalsCount-1];
+            struct NCC_Node* newLiteralsNode = createLiteralsNode(lastLiteral);
+
+            // Remove the last literal from the parent node,
+            lastLiteral[0] = 0;
+            NByteVector.resize(&nodeData->literals.string, literalsCount);
+            literalsNode->setNextNode(literalsNode, newLiteralsNode);
+
+            return newLiteralsNode;
+        }
+    }
+
+    return literalsNode;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Literal range node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -421,6 +446,10 @@ static struct NCC_Node* handleLiteral(struct NCC_Node* parentNode, const char** 
             // Just append to parent,
             struct LiteralsNodeData* nodeData = parentNode->data;
             NString.append(&nodeData->literals, "%c", literal);
+
+            #ifdef NCC_VERBOSE
+            NLOGI("NCC", "Appended to literals node: %s%c%s", NTCOLOR(HIGHLIGHT), literal, NTCOLOR(STREAM_DEFAULT));
+            #endif
             return parentNode;
         }
 
@@ -543,6 +572,10 @@ static void orNodeDeleteTree(struct NCC_Node* tree) {
 }
 
 static struct NCC_Node* createOrNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
+
+    // If the parent node is a literals node with more than one literal, break the last literal apart so that it's
+    // the only literal matched in the or,
+    parentNode = breakLastLiteralIfNeeded(parentNode);
 
     // Get grand-parent node,
     struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
@@ -680,7 +713,7 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
     nodeData->subRuleTree = subRuleTree;
 
     #ifdef NCC_VERBOSE
-    NLOGI("NCC", "Created sub-rule node: %s{%s}%s", NTCOLOR(HIGHLIGHT), subRule.objects, NTCOLOR(STREAM_DEFAULT));
+    NLOGI("NCC", "Created sub-rule node: %s{%s}%s", NTCOLOR(HIGHLIGHT), subRule, NTCOLOR(STREAM_DEFAULT));
     #endif
     parentNode->setNextNode(parentNode, node);
     return node;
@@ -746,6 +779,10 @@ static void repeatNodeDeleteTree(struct NCC_Node* tree) {
 }
 
 static struct NCC_Node* createRepeatNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
+
+    // If the parent node is a literals node with more than one literal, break the last literal apart so that it's
+    // the only literal repeated,
+    parentNode = breakLastLiteralIfNeeded(parentNode);
 
     // Get grand-parent node,
     struct NCC_Node* grandParentNode = parentNode->getPreviousNode(parentNode);
@@ -948,12 +985,12 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
     }
 
     // Save the match,
+    struct NCC_Variable match;
     if (rule->pushVariable) {
         char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
         NSystemUtils.memcpy(matchedText, text, matchLength);
         matchedText[matchLength] = 0;
 
-        struct NCC_Variable match;
         NCC_initializeVariable(&match, NString.get(&rule->name), matchedText);
         NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
         NVector.pushBack(&ncc->variables, &match);
@@ -961,7 +998,15 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
 
     // Follow next nodes,
     #ifdef NCC_VERBOSE
-    NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&match.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&match.value), NTCOLOR(STREAM_DEFAULT));
+        if (rule->pushVariable) {
+            NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), match.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&match.value), NTCOLOR(STREAM_DEFAULT));
+        } else {
+            char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
+            NSystemUtils.memcpy(matchedText, text, matchLength);
+            matchedText[matchLength] = 0;
+            NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&rule->name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchedText, NTCOLOR(STREAM_DEFAULT));
+            NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
+        }
     #endif
     return matchLength;
 }

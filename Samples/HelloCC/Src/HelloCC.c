@@ -12,7 +12,7 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_onMatchListener onMatchLis
     }
     if (!ruleName) ruleName = "";
 
-    if (!NCC_addRule(ncc, ruleName, rule, onMatchListener, rootRule)) {
+    if (!NCC_addRule(ncc, ruleName, rule, onMatchListener, rootRule, True, False)) {
         NERROR("HelloCC", "Couldn't add rule. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT));
         return ;
     }
@@ -28,8 +28,8 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_onMatchListener onMatchLis
 void matchListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     NLOGI("HelloCC", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
     struct NCC_Variable variable;
-    while (NCC_popVariable(ncc, &variable)) {
-        NLOGI("HelloCC", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variable.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
+    while (NCC_popRuleVariable(ncc, &variable)) {
+        NLOGI("HelloCC", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), variable.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
         NCC_destroyVariable(&variable);
     }
 }
