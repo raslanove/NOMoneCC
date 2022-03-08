@@ -31,6 +31,7 @@ void NMain() {
     // Common,
     NCC_addRule(&ncc, "ε", "", 0, False, False, False);
     NCC_addRule(&ncc, "digit", "0-9", 0, False, False, False);
+    NCC_addRule(&ncc, "non-zero-digit", "1-9", 0, False, False, False);
     NCC_addRule(&ncc, "non-digit", "_|a-z|A-Z", 0, False, False, False);
     NCC_addRule(&ncc, "hexadecimal-prefix", "0x|X", 0, False, False, False);
     NCC_addRule(&ncc, "hexadecimal-digit", "0-9|a-f|A-F", 0, False, False, False);
@@ -43,25 +44,25 @@ void NMain() {
 
     // Constants,
     // Integer constant,
-    NCC_addRule(&ncc, "decimal-constant", "1-9 0-9^*", 0, False, False, False);
+    NCC_addRule(&ncc, "decimal-constant", "${non-zero-digit} ${digit}^*", 0, False, False, False);
     NCC_addRule(&ncc, "octal-constant", "0 0-7^*", 0, False, False, False);
     NCC_addRule(&ncc, "hexadecimal-constant", "${hexadecimal-prefix} ${hexadecimal-digit} ${hexadecimal-digit}^*", 0, False, False, False);
     NCC_addRule(&ncc, "integer-suffix", "{ u|U l|L|{ll}|{LL}|${ε} } | { l|L|{ll}|{LL} u|U|${ε} }", 0, False, False, False);
     NCC_addRule(&ncc, "integer-constant", "${decimal-constant}|${octal-constant}|${hexadecimal-constant} ${integer-suffix}|${ε}", 0, False, True, False);
 
     // Decimal floating point,
-    NCC_addRule(&ncc, "fractional-constant", "{0-9^* . 0-9 0-9^*} | {0-9 0-9^* . 0-9^*}", 0, False, False, False);
-    NCC_addRule(&ncc, "exponent-part", "e|E +|\\-|${ε} 0-9 0-9^*", 0, False, False, False);
+    NCC_addRule(&ncc, "fractional-constant", "{${digit}^* . ${digit} ${digit}^*} | {${digit} ${digit}^* . ${digit}^*}", 0, False, False, False);
+    NCC_addRule(&ncc, "exponent-part", "e|E +|\\-|${ε} ${digit} ${digit}^*", 0, False, False, False);
     NCC_addRule(&ncc, "floating-suffix", "f|l|F|L", 0, False, False, False);
     NCC_addRule(&ncc, "decimal-floating-constant",
             "{${fractional-constant} ${exponent-part}|${ε} ${floating-suffix}|${ε}} | "
-            "{0-9 0-9^* ${exponent-part} ${floating-suffix}|${ε}}", 0, False, False, False);
+            "{${digit} ${digit}^* ${exponent-part} ${floating-suffix}|${ε}}", 0, False, False, False);
 
     // Hexadecimal floating point,
     NCC_addRule(&ncc, "hexadecimal-fractional-constant",
             "{${hexadecimal-digit}^* . ${hexadecimal-digit} ${hexadecimal-digit}^*} | "
             "{${hexadecimal-digit} ${hexadecimal-digit}^* . ${hexadecimal-digit}^*}", 0, False, False, False);
-    NCC_addRule(&ncc, "binary-exponent-part", "p|P +|\\-|${ε} 0-9 0-9^*", 0, False, False, False);
+    NCC_addRule(&ncc, "binary-exponent-part", "p|P +|\\-|${ε} ${digit} ${digit}^*", 0, False, False, False);
     NCC_addRule(&ncc, "hexadecimal-floating-constant",
                 "${hexadecimal-prefix} ${hexadecimal-fractional-constant}|{${hexadecimal-digit}${hexadecimal-digit}^*} ${binary-exponent-part} ${floating-suffix}|${ε}", 0, False, False, False);
 
