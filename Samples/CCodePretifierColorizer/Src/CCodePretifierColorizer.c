@@ -18,7 +18,7 @@ void NMain() {
     NSystemUtils.logI("C", "besm Allah :)\n");
 
     const char* code =
-            "\"abcdef\\xf\\\"f\\\\ghi\\\"\"";
+            "<NSystemUtils.h>";
 
     // Substitute,
     struct NCC ncc;
@@ -73,14 +73,18 @@ void NMain() {
     NCC_addRule(&ncc, "c-char", "\x01-\x09 | \x0b-\x5b | \x5d-\xff", 0, False, False, False); // All characters except new-line and backslash (\).
     NCC_addRule(&ncc, "c-char-with-backslash-without-uUxX", "\x01-\x09 | \x0b-\x54 | \x56-\x57| \x59-\x74 | \x76-\x77 | \x79-\xff", 0, False, False, False); // All characters except new-line, 'u', 'U', 'x' and 'X'.
     NCC_addRule(&ncc, "hexadecimal-escape-sequence", "\\\\x ${hexadecimal-digit} ${hexadecimal-digit}^*", 0, False, False, False);
-    NCC_addRule(&ncc, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '", 0, False, True, False); // TODO: add hex escape....
+    NCC_addRule(&ncc, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '", 0, False, True, False);
 
     // String literal,
     // See: https://stackoverflow.com/a/13087264/1942069   and   https://stackoverflow.com/a/13445170/1942069
-    NCC_addRule(&ncc, "string-literal", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \"", 0, False, True, False); // TODO: add hex escape...
+    NCC_addRule(&ncc, "string-literal", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \"", 0, False, True, False);
+
+    // Header name,
+    NCC_addRule(&ncc, "h-char", "\x01-\x09 | \x0b-\xff", 0, False, False, False); // All characters except new-line.
+    NCC_addRule(&ncc, "header-name", "{<${h-char}^*>} | {\"${h-char}^*\"}", 0, False, True, False);
 
     // Document,
-    NCC_addRule(&ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal}", printListener, True, False, False);
+    NCC_addRule(&ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal} | ${header-name}", printListener, True, False, False);
 
     // Match and cleanup,
     int32_t matchLength = NCC_match(&ncc, code);
