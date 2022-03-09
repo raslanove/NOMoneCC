@@ -18,7 +18,7 @@ void NMain() {
     NSystemUtils.logI("C", "besm Allah :)\n");
 
     const char* code =
-            "'abcdef\\xffghi'";
+            "\"abcdef\\xf\\\"f\\\\ghi\\\"\"";
 
     // Substitute,
     struct NCC ncc;
@@ -75,13 +75,12 @@ void NMain() {
     NCC_addRule(&ncc, "hexadecimal-escape-sequence", "\\\\x ${hexadecimal-digit} ${hexadecimal-digit}^*", 0, False, False, False);
     NCC_addRule(&ncc, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '", 0, False, True, False); // TODO: add hex escape....
 
-    //int32_t a = U'\U0000aaa0';
-    //int32_t a = U'\xfff';
-    int32_t a = 'x';
-    NLOGE("sdf", "new line: %d", a);
+    // String literal,
+    // See: https://stackoverflow.com/a/13087264/1942069   and   https://stackoverflow.com/a/13445170/1942069
+    NCC_addRule(&ncc, "string-literal", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \"", 0, False, True, False); // TODO: add hex escape...
 
     // Document,
-    NCC_addRule(&ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant}", printListener, True, False, False);
+    NCC_addRule(&ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal}", printListener, True, False, False);
 
     // Match and cleanup,
     int32_t matchLength = NCC_match(&ncc, code);
