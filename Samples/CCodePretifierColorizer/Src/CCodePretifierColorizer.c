@@ -18,15 +18,15 @@ void NMain() {
     NSystemUtils.logI("C", "besm Allah :)\n");
 
     const char* code =
-            "0x8.8p+2L";
-
-    //float a = .2e-2f;
-    //float a = 0x8.8p+2;
-    //NLOGW("sdf", "A is %f", a);
+            "'abcdef\\xffghi'";
 
     // Substitute,
     struct NCC ncc;
     NCC_initializeNCC(&ncc);
+
+    // =====================================
+    // Lexical rules,
+    // =====================================
 
     // Common,
     NCC_addRule(&ncc, "ε", "", 0, False, False, False);
@@ -69,8 +69,19 @@ void NMain() {
     // Floating point constant,
     NCC_addRule(&ncc, "floating-constant", "${decimal-floating-constant} | ${hexadecimal-floating-constant}", 0, False, True, False);
 
+    // Character constant (supporting unknown escape sequences which are implementation defined. We'll pass the escaped character like gcc and clang do),
+    NCC_addRule(&ncc, "c-char", "\x01-\x09 | \x0b-\x5b | \x5d-\xff", 0, False, False, False); // All characters except new-line and backslash (\).
+    NCC_addRule(&ncc, "c-char-with-backslash-without-uUxX", "\x01-\x09 | \x0b-\x54 | \x56-\x57| \x59-\x74 | \x76-\x77 | \x79-\xff", 0, False, False, False); // All characters except new-line, 'u', 'U', 'x' and 'X'.
+    NCC_addRule(&ncc, "hexadecimal-escape-sequence", "\\\\x ${hexadecimal-digit} ${hexadecimal-digit}^*", 0, False, False, False);
+    NCC_addRule(&ncc, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '", 0, False, True, False); // TODO: add hex escape....
+
+    //int32_t a = U'\U0000aaa0';
+    //int32_t a = U'\xfff';
+    int32_t a = 'x';
+    NLOGE("sdf", "new line: %d", a);
+
     // Document,
-    NCC_addRule(&ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant}", printListener, True, False, False);
+    NCC_addRule(&ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant}", printListener, True, False, False);
 
     // Match and cleanup,
     int32_t matchLength = NCC_match(&ncc, code);

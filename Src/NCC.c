@@ -8,38 +8,6 @@
 #include <NVector.h>
 
 //
-// Node types:
-//   literals:        abc
-//   or:              |
-//   literal range:   a-z
-//   repeat:          ^*
-//   sub-rule:        ${name} or {rule}
-//   anything:        *   or  * followed by something
-//
-// Example rules:
-//   Literals     :         for             = for
-//   Literal range:         smallLetter     = a-z
-//   Or           :         letter          = a-z|A-Z
-//   Repeat       :         name            = A-Za-z^*
-//   Sub-rule     :         namesList       = {A-Za-z^*}|{{A-Za-z^*}{,A-Za-z^*}^*}
-//   Substitute   :         integer         = 1-90-9^*
-//                          integerPair     = ${integer},${integer}
-//   Anything     :         sentence        = *.
-//
-// Reserved characters (must be escaped):
-//   \ | - ^ * { } $
-//   Whitespaces must be escaped, otherwise they only serve to resolve ambiguities. For example:
-//     identifier = {a-z|A-Z}{a-z|A-Z|0-9}^0-49
-//   Does this mean a letter or a digit repeated from 0 to 49 times? Or is it from 0 to 4 followed
-//   by 9? It's the former. If we need that latter, we use:
-//     variableName = {a-z|A-Z}{a-z|A-Z|0-9}^0-4 9
-//   The space is ignored. It only serves to clearly indicate that the 9 is separate from the 4.
-//
-//   Note: now that we've removed the support for limited repeat, this ambiguity doesn't exist at all,
-//         still, spaces must still be escaped, for they can be used to make rules look a lot cleaner.
-//
-
-//
 // Operation:
 //   First, we construct our rules. Then, given a string, we find the match route. The match route is
 //   constructed in an NByteVector. We push single bytes or node pointers according to the following:
