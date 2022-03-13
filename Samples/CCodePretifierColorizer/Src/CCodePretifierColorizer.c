@@ -18,7 +18,7 @@ void NMain() {
     NSystemUtils.logI("C", "besm Allah :)\n");
 
     const char* code =
-            "<NSystemUtils.h>";
+            "\"besm Allah\" //asdasdasdas\n  \"AlRa7maan AlRa7eem\"";
 
     // Substitute,
     struct NCC ncc;
@@ -30,6 +30,12 @@ void NMain() {
 
     // Common,
     NCC_addRule(&ncc, "ε", "", 0, False, False, False);
+    NCC_addRule(&ncc, "white-space", "{\\ |\t|\r|\n|{\\\\\n}}^*", 0, False, False, False);
+    NCC_addRule(&ncc, "line-end", "\n|${ε}", 0, False, False, False);
+    NCC_addRule(&ncc, "line-comment", "// * ${line-end}|{\\\\${line-end}}", 0, False, False, False);
+    NCC_addRule(&ncc, "block-comment", "/\\* * \\*/", 0, False, False, False);
+    NCC_addRule(&ncc, "", "{${white-space}|${line-comment}|${block-comment}}^*", 0, False, False, False);
+
     NCC_addRule(&ncc, "digit", "0-9", 0, False, False, False);
     NCC_addRule(&ncc, "non-zero-digit", "1-9", 0, False, False, False);
     NCC_addRule(&ncc, "non-digit", "_|a-z|A-Z", 0, False, False, False);
@@ -51,7 +57,7 @@ void NMain() {
     NCC_addRule(&ncc, "integer-constant", "${decimal-constant}|${octal-constant}|${hexadecimal-constant} ${integer-suffix}|${ε}", 0, False, True, False);
 
     // Decimal floating point,
-    NCC_addRule(&ncc, "fractional-constant", "{${digit}^* . ${digit} ${digit}^*} | {${digit} ${digit}^* . ${digit}^*}", 0, False, False, False);
+    NCC_addRule(&ncc, "fractional-constant", "{${digit}^* . ${digit} ${digit}^*} | {${digit} ${digit}^* . }", 0, False, False, False);
     NCC_addRule(&ncc, "exponent-part", "e|E +|\\-|${ε} ${digit} ${digit}^*", 0, False, False, False);
     NCC_addRule(&ncc, "floating-suffix", "f|l|F|L", 0, False, False, False);
     NCC_addRule(&ncc, "decimal-floating-constant",
@@ -61,7 +67,7 @@ void NMain() {
     // Hexadecimal floating point,
     NCC_addRule(&ncc, "hexadecimal-fractional-constant",
             "{${hexadecimal-digit}^* . ${hexadecimal-digit} ${hexadecimal-digit}^*} | "
-            "{${hexadecimal-digit} ${hexadecimal-digit}^* . ${hexadecimal-digit}^*}", 0, False, False, False);
+            "{${hexadecimal-digit} ${hexadecimal-digit}^* . }", 0, False, False, False);
     NCC_addRule(&ncc, "binary-exponent-part", "p|P +|\\-|${ε} ${digit} ${digit}^*", 0, False, False, False);
     NCC_addRule(&ncc, "hexadecimal-floating-constant",
                 "${hexadecimal-prefix} ${hexadecimal-fractional-constant}|{${hexadecimal-digit}${hexadecimal-digit}^*} ${binary-exponent-part} ${floating-suffix}|${ε}", 0, False, False, False);
@@ -77,11 +83,18 @@ void NMain() {
 
     // String literal,
     // See: https://stackoverflow.com/a/13087264/1942069   and   https://stackoverflow.com/a/13445170/1942069
-    NCC_addRule(&ncc, "string-literal", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \"", 0, False, True, False);
+    NCC_addRule(&ncc, "string-literal-contents", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \"", 0, False, False, False);
+    NCC_addRule(&ncc, "string-literal", "${string-literal-contents} {${} ${string-literal-contents}}|${ε}", 0, False, True, False);
 
     // Header name,
     NCC_addRule(&ncc, "h-char", "\x01-\x09 | \x0b-\xff", 0, False, False, False); // All characters except new-line.
     NCC_addRule(&ncc, "header-name", "{<${h-char}^*>} | {\"${h-char}^*\"}", 0, False, True, False);
+
+    // =====================================
+    // Phrase Structure,
+    // =====================================
+
+
 
     // Document,
     NCC_addRule(&ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal} | ${header-name}", printListener, True, False, False);
