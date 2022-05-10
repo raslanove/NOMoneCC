@@ -13,6 +13,16 @@ void printListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesC
     }
 }
 
+void definePreprocessing(struct NCC* ncc) {
+
+    // Header name,
+    NCC_addRule(ncc, "h-char", "\x01-\x09 | \x0b-\xff", 0, False, False, False); // All characters except new-line.
+    NCC_addRule(ncc, "header-name", "{<${h-char}^*>} | {\"${h-char}^*\"}", 0, False, False, False);
+
+    // Preprocessing number,
+    // TODO:...
+}
+
 void defineLanguage(struct NCC* ncc) {
 
     // =====================================
@@ -45,7 +55,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "octal-constant", "0 0-7^*", 0, False, False, False);
     NCC_addRule(ncc, "hexadecimal-constant", "${hexadecimal-prefix} ${hexadecimal-digit} ${hexadecimal-digit}^*", 0, False, False, False);
     NCC_addRule(ncc, "integer-suffix", "{ u|U l|L|{ll}|{LL}|${ε} } | { l|L|{ll}|{LL} u|U|${ε} }", 0, False, False, False);
-    NCC_addRule(ncc, "integer-constant", "${decimal-constant}|${octal-constant}|${hexadecimal-constant} ${integer-suffix}|${ε}", 0, False, True, False);
+    NCC_addRule(ncc, "integer-constant", "${decimal-constant}|${octal-constant}|${hexadecimal-constant} ${integer-suffix}|${ε}", 0, False, False, False);
 
     // Decimal floating point,
     NCC_addRule(ncc, "fractional-constant", "{${digit}^* . ${digit} ${digit}^*} | {${digit} ${digit}^* . }", 0, False, False, False);
@@ -64,37 +74,78 @@ void defineLanguage(struct NCC* ncc) {
                 "${hexadecimal-prefix} ${hexadecimal-fractional-constant}|{${hexadecimal-digit}${hexadecimal-digit}^*} ${binary-exponent-part} ${floating-suffix}|${ε}", 0, False, False, False);
 
     // Floating point constant,
-    NCC_addRule(ncc, "floating-constant", "${decimal-floating-constant} | ${hexadecimal-floating-constant}", 0, False, True, False);
+    NCC_addRule(ncc, "floating-constant", "${decimal-floating-constant} | ${hexadecimal-floating-constant}", 0, False, False, False);
+
+    // Enumeration constant,
+    NCC_addRule(ncc, "enumeration-constant", "${identifier}", 0, False, False, False);
 
     // Character constant (supporting unknown escape sequences which are implementation defined. We'll pass the escaped character like gcc and clang do),
     NCC_addRule(ncc, "c-char", "\x01-\x09 | \x0b-\x5b | \x5d-\xff", 0, False, False, False); // All characters except new-line and backslash (\).
     NCC_addRule(ncc, "c-char-with-backslash-without-uUxX", "\x01-\x09 | \x0b-\x54 | \x56-\x57| \x59-\x74 | \x76-\x77 | \x79-\xff", 0, False, False, False); // All characters except new-line, 'u', 'U', 'x' and 'X'.
     NCC_addRule(ncc, "hexadecimal-escape-sequence", "\\\\x ${hexadecimal-digit} ${hexadecimal-digit}^*", 0, False, False, False);
-    NCC_addRule(ncc, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '", 0, False, True, False);
+    NCC_addRule(ncc, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '", 0, False, False, False);
+
+    // Constant,
+    NCC_addRule(ncc, "constant", "${integer-constant} | ${floating-constant} | ${enumeration-constant} | ${character-constant}", 0, False, False, False);
 
     // String literal,
     // See: https://stackoverflow.com/a/13087264/1942069   and   https://stackoverflow.com/a/13445170/1942069
     NCC_addRule(ncc, "string-literal-contents", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \"", 0, False, False, False);
-    NCC_addRule(ncc, "string-literal", "${string-literal-contents} {${} ${string-literal-contents}}|${ε}", 0, False, True, False);
-
-    // Header name,
-    NCC_addRule(ncc, "h-char", "\x01-\x09 | \x0b-\xff", 0, False, False, False); // All characters except new-line.
-    NCC_addRule(ncc, "header-name", "{<${h-char}^*>} | {\"${h-char}^*\"}", 0, False, True, False);
+    // TODO: do we need a ${} when all unnecessary whitespaces should be removed during pre-processing?
+    NCC_addRule(ncc, "string-literal", "${string-literal-contents} {${} ${string-literal-contents}}|${ε}", 0, False, False, False);
 
     // =====================================
     // Phrase Structure,
     // =====================================
 
-    // Generic-selection,
+    // Generic selection,
     // See: https://www.geeksforgeeks.org/_generic-keyword-c/
     //#define INC(x) _Generic((x), long double: INCl, default: INC, float: INCf)(x)
-    //NLOGE("", "%d\n", _Generic(1.0L, float:1, double:2, long double:3, default:0));
+    //NLOGE("", "%d\n", _Generic(1, int: 7, float:1, double:2, long double:3, default:0));
+    // TODO: implement,
+    NCC_addRule(ncc, "generic-selection", "STUB!", 0, False, False, False);
 
+    // Expression,
+    // TODO: implement,
+    NCC_addRule(ncc, "expression", "STUB!", 0, False, False, False);
 
+    // Primary expression,
+    NCC_addRule(ncc, "primary-expression",
+            "${identifier} | "
+            "${constant} | "
+            "${string-literal} | "
+            "{ (${expression}) } | "
+            "${generic-selection}", 0, False, False, False);
 
+    // argument-expression-list-opt,
+    // TODO: implement,
+    NCC_addRule(ncc, "argument-expression-list-opt", "STUB!", 0, False, False, False);
+
+    // Type name,
+    // TODO: implement,
+    NCC_addRule(ncc, "type-name", "STUB!", 0, False, False, False);
+
+    // Initializer list,
+    // TODO: implement,
+    NCC_addRule(ncc, "initializer-list", "STUB!", 0, False, False, False);
+
+    // Postfix expression,
+    NCC_addRule(ncc, "postfix-expression-contents",
+            "${primary-expression} | "
+            "{ ( ${type-name} ) \\{ ${initializer-list}   \\} } | "
+            "{ ( ${type-name} ) \\{ ${initializer-list} , \\} }", 0, False, False, False);
+    NCC_addRule(ncc, "postfix-expression",
+            "${postfix-expression-contents} | "
+            "{ ${postfix-expression-contents} [ ${expression} ] } | "
+            "{ ${postfix-expression-contents} ( ${argument-expression-list-opt} ) } | "
+            "{ ${postfix-expression-contents} .  ${identifier} } | "
+            "{ ${postfix-expression-contents} \\-> ${identifier} } | "
+            "{ ${postfix-expression-contents} ++     } | "
+            "{ ${postfix-expression-contents} \\-\\- }"
+            , 0, False, False, False);
 
     // Document,
-    NCC_addRule(ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal} | ${header-name}", printListener, True, False, False);
+    NCC_addRule(ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal}", printListener, True, False, False);
 }
 
 void NMain() {

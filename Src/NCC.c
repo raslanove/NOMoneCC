@@ -13,7 +13,7 @@
 //   constructed in an NByteVector. We push single bytes or node pointers according to the following:
 //     0     : rule end marker.
 //     1->254: skip this number of literals.
-//     255   : rule beginning marker. Right afer this, a substitute node index was pushed.
+//     255   : rule beginning marker. Right after this, a substitute node index was pushed.
 //
 // TODO: bytes indicating skipped literals should be combined together. The code is there, just commented
 // out because it's not working properly. Most probably it's because we can't discard stack history if it
@@ -930,7 +930,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
     if (nextValue) {
         matchLength = followMatchRoute(ncc, text);
     } else {
-        // This substitute node can by empty,
+        // Found a 0 (this substitute node can by empty),
         matchLength = 0;
         NByteVector.popBack(ncc->matchRoute, &nextValue); // Discard the 0.
     }
