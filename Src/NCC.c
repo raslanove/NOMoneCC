@@ -89,6 +89,16 @@ struct NCC_Rule {
     boolean popsChildrenVariables; // False: keeps the variables of nested rules.
 };
 
+static inline struct NCC_Rule* initializeRule(struct NCC_Rule* rule, const char* name, struct NCC_Node* ruleTree, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+    NString.set(&rule->name, "%s", name);
+    rule->tree = ruleTree;
+    rule->onMatchListener = onMatchListener;
+    rule->rootRule = rootRule;
+    rule->pushVariable = pushVariable;
+    rule->popsChildrenVariables = popsChildrenVariables;
+    return rule;
+}
+
 static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
 
     // Create rule tree,
@@ -98,14 +108,10 @@ static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char
         return 0;
     }
 
-    // Create rule,
+    // Create and initialize rule,
     struct NCC_Rule* rule = NMALLOC(sizeof(struct NCC_Rule), "NCC.createRule() rule");
-    NString.initialize(&rule->name, "%s", name);
-    rule->tree = ruleTree;
-    rule->onMatchListener = onMatchListener;
-    rule->rootRule = rootRule;
-    rule->pushVariable = pushVariable;
-    rule->popsChildrenVariables = popsChildrenVariables;
+    NString.initialize(&rule->name, "");
+    initializeRule(rule, name, ruleTree, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
 
     return rule;
 }
@@ -1147,6 +1153,30 @@ boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC
     }
 
     NVector.pushBack(&ncc->rules, &rule);
+    return True;
+}
+
+boolean NCC_updateRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+
+    struct NCC_Rule* rule = getRule(ncc, name);
+    if (!rule) {
+        NERROR("NCC", "NCC_updateRule(): unable to update rule %s%s%s. Rule doesn't exist.", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT));
+        return False;
+    }
+
+    // Create new rule tree,
+    struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
+    if (!ruleTree) {
+        NERROR("NCC", "NCC_updateRule(): unable to construct rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
+        return False;
+    }
+
+    // Dispose of old rule-tree,
+    rule->tree->deleteTree(rule->tree);
+
+    // Reinitialize rule,
+    initializeRule(rule, name, ruleTree, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
+
     return True;
 }
 

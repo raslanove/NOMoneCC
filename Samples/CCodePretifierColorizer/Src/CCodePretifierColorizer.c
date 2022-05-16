@@ -98,18 +98,9 @@ void defineLanguage(struct NCC* ncc) {
     // Phrase Structure,
     // =====================================
 
-    // Generic selection,
-    // See: https://www.geeksforgeeks.org/_generic-keyword-c/
-    //#define INC(x) _Generic((x), long double: INCl, default: INC, float: INCf)(x)
-    //NLOGE("", "%d\n", _Generic(1, int: 7, float:1, double:2, long double:3, default:0));
-    // TODO: implement,
-    NCC_addRule(ncc, "generic-selection", "STUB!", 0, False, False, False);
-
-    // Expression,
-    // TODO: implement,
-    NCC_addRule(ncc, "expression", "STUB!", 0, False, False, False);
-
     // Primary expression,
+    NCC_addRule(ncc, "expression", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "generic-selection", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "primary-expression",
             "${identifier} | "
             "${constant} | "
@@ -117,32 +108,55 @@ void defineLanguage(struct NCC* ncc) {
             "{ (${expression}) } | "
             "${generic-selection}", 0, False, False, False);
 
-    // argument-expression-list-opt,
-    // TODO: implement,
-    NCC_addRule(ncc, "argument-expression-list-opt", "STUB!", 0, False, False, False);
+    // Generic selection,
+    // See: https://www.geeksforgeeks.org/_generic-keyword-c/
+    //#define INC(x) _Generic((x), long double: INCl, default: INC, float: INCf)(x)
+    //NLOGE("", "%d\n", _Generic(1, int: 7, float:1, double:2, long double:3, default:0));
+    NCC_addRule(ncc, "assignment-expression", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "generic-assoc-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "generic-selection", "_Generic ( ${assignment-expression}, ${generic-assoc-list} )", 0, False, False, False);
 
-    // Type name,
-    // TODO: implement,
+    // Generic assoc list,
+    NCC_addRule(ncc, "generic-association", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "generic-assoc-list", "${generic-association} {, ${generic-association}}^*", 0, False, False, False);
+
+    // Generic association,
     NCC_addRule(ncc, "type-name", "STUB!", 0, False, False, False);
-
-    // Initializer list,
-    // TODO: implement,
-    NCC_addRule(ncc, "initializer-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "generic-association",
+            "{${type-name} : ${assignment-expression}} |"
+            "{default : ${assignment-expression}}", 0, False, False, False);
 
     // Postfix expression,
+    NCC_addRule(ncc, "argument-expression-list", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "initializer-list", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "postfix-expression-contents",
             "${primary-expression} | "
             "{ ( ${type-name} ) \\{ ${initializer-list}   \\} } | "
             "{ ( ${type-name} ) \\{ ${initializer-list} , \\} }", 0, False, False, False);
     NCC_addRule(ncc, "postfix-expression",
-            "${postfix-expression-contents} | "
-            "{ ${postfix-expression-contents} [ ${expression} ] } | "
-            "{ ${postfix-expression-contents} ( ${argument-expression-list-opt} ) } | "
-            "{ ${postfix-expression-contents} .  ${identifier} } | "
-            "{ ${postfix-expression-contents} \\-> ${identifier} } | "
-            "{ ${postfix-expression-contents} ++     } | "
-            "{ ${postfix-expression-contents} \\-\\- }"
-            , 0, False, False, False);
+            "${postfix-expression-contents} {"
+            "   {[${expression}]} | {(${argument-expression-list}|${ε})} | {.${identifier}} | {\\-> ${identifier}} | {++} | {\\-\\-}"
+            "}^*", 0, False, False, False);
+
+    // Argument expression list,
+    NCC_updateRule(ncc, "argument-expression-list", "${assignment-expression} {, ${assignment-expression}}^*", 0, False, False, False);
+
+    // Unary expression,
+    NCC_addRule(ncc, "unary-operator", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "cast-expression", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "unary-expression-contents",
+                "${postfix-expression} | "
+                "{ ${unary-operator} ${cast-expression} } |"
+                "{   sizeof(${type-name}) } |"
+                "{ _Alignof(${type-name}) }", 0, False, False, False);
+    NCC_addRule(ncc, "unary-expression",
+                "${unary-expression-contents} | "
+                "{ ++     ${unary-expression-contents} } | "
+                "{ \\-\\- ${unary-expression-contents} } | "
+                "{   sizeof(${type-name}) }", 0, False, False, False);
+
+    // Unary operator,
+    NCC_updateRule(ncc, "unary-operator", "& | \\* | + | \\- | ~ | !", 0, False, False, False);
 
     // Document,
     NCC_addRule(ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal}", printListener, True, False, False);
