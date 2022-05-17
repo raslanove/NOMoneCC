@@ -1126,17 +1126,17 @@ void NCC_destroyAndFreeNCC(struct NCC* ncc) {
     NFREE(ncc, "NCC.NCC_destroyAndFreeNCC() ncc");
 }
 
-boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+boolean NCC_addRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
 
     // Check if a rule with this name already exists,
-    if (getRule(ncc, name)) {
-        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s. A rule with the same name exists.", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT));
+    if (getRule(ncc, ruleName)) {
+        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s. A rule with the same name exists.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
-    struct NCC_Rule* rule = createRule(ncc, name, ruleText, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
+    struct NCC_Rule* rule = createRule(ncc, ruleName, ruleText, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
     if (!rule) {
-        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
@@ -1156,18 +1156,18 @@ boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC
     return True;
 }
 
-boolean NCC_updateRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+boolean NCC_updateRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
 
-    struct NCC_Rule* rule = getRule(ncc, name);
+    struct NCC_Rule* rule = getRule(ncc, ruleName);
     if (!rule) {
-        NERROR("NCC", "NCC_updateRule(): unable to update rule %s%s%s. Rule doesn't exist.", NTCOLOR(HIGHLIGHT), name, NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "NCC_updateRule(): unable to update rule %s%s%s. Rule doesn't exist.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
     // Create new rule tree,
     struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
     if (!ruleTree) {
-        NERROR("NCC", "NCC_updateRule(): unable to construct rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "NCC_updateRule(): unable to construct rule tree: %s%s%s. Failed to update rule: %s%s%s.", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
@@ -1175,7 +1175,7 @@ boolean NCC_updateRule(struct NCC* ncc, const char* name, const char* ruleText, 
     rule->tree->deleteTree(rule->tree);
 
     // Reinitialize rule,
-    initializeRule(rule, name, ruleTree, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
+    initializeRule(rule, ruleName, ruleTree, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
 
     return True;
 }

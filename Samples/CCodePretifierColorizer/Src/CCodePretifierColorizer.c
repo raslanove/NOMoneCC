@@ -5,10 +5,10 @@
 #include <NCC.h>
 
 void printListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    NLOGI("C", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
+    NLOGI("", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
     struct NCC_Variable variable;
     while (NCC_popRuleVariable(ncc, &variable)) {
-        NLOGI("C", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), variable.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
+        NLOGI("", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), variable.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
         NCC_destroyVariable(&variable);
     }
 }
@@ -24,6 +24,37 @@ void definePreprocessing(struct NCC* ncc) {
 }
 
 void defineLanguage(struct NCC* ncc) {
+
+    // Notes:
+    // ======
+    //  Leave right recursion as is.
+    //  Convert left recursion into repeat or right recursion (note that right recursion inverses the order of operations).
+    //    Example:
+    //    ========
+    //      Rule:
+    //      -----
+    //         shift-expression:
+    //            additive-expression
+    //            shift-expression << additive-expression
+    //            shift-expression >> additive-expression
+    //      Becomes:
+    //      --------
+    //         shift-expression:
+    //            ${additive-expression} {
+    //               { << ${additive-expression}} |
+    //               { >> ${additive-expression}}
+    //            }^*
+    //      Or:
+    //      --
+    //         shift-expression:
+    //            ${additive-expression} |
+    //            { ${additive-expression} << ${shift-expression}} |
+    //            { ${additive-expression} >> ${shift-expression}}
+    //
+
+    // TODO: do we need a ${} when all unnecessary whitespaces should be removed during pre-processing?
+    //       ${} could necessary for code coloring, and not for compiling. This should be more obvious
+    //       upon implementation.
 
     // =====================================
     // Lexical rules,
@@ -86,17 +117,18 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '", 0, False, False, False);
 
     // Constant,
-    NCC_addRule(ncc, "constant", "${integer-constant} | ${floating-constant} | ${enumeration-constant} | ${character-constant}", 0, False, False, False);
+    NCC_addRule(ncc, "constant", "${integer-constant} | ${floating-constant} | ${enumeration-constant} | ${character-constant}", 0, False, True, False);
 
     // String literal,
     // See: https://stackoverflow.com/a/13087264/1942069   and   https://stackoverflow.com/a/13445170/1942069
     NCC_addRule(ncc, "string-literal-contents", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \"", 0, False, False, False);
-    // TODO: do we need a ${} when all unnecessary whitespaces should be removed during pre-processing?
-    NCC_addRule(ncc, "string-literal", "${string-literal-contents} {${} ${string-literal-contents}}|${ε}", 0, False, False, False);
+    NCC_addRule(ncc, "string-literal", "${string-literal-contents} {${} ${string-literal-contents}}|${ε}", 0, False, True, False);
 
     // =====================================
     // Phrase Structure,
     // =====================================
+
+    // TODO: add ${} where needed...
 
     // Primary expression,
     NCC_addRule(ncc, "expression", "STUB!", 0, False, False, False);
@@ -106,7 +138,7 @@ void defineLanguage(struct NCC* ncc) {
             "${constant} | "
             "${string-literal} | "
             "{ (${expression}) } | "
-            "${generic-selection}", 0, False, False, False);
+            "${generic-selection}", 0, False, True, False);
 
     // Generic selection,
     // See: https://www.geeksforgeeks.org/_generic-keyword-c/
@@ -136,59 +168,113 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "postfix-expression",
             "${postfix-expression-contents} {"
             "   {[${expression}]} | {(${argument-expression-list}|${ε})} | {.${identifier}} | {\\-> ${identifier}} | {++} | {\\-\\-}"
-            "}^*", 0, False, False, False);
+            "}^*", 0, False, True, False);
 
     // Argument expression list,
     NCC_updateRule(ncc, "argument-expression-list", "${assignment-expression} {, ${assignment-expression}}^*", 0, False, False, False);
 
     // Unary expression,
+    NCC_addRule(ncc, "unary-expression", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "unary-operator", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "cast-expression", "STUB!", 0, False, False, False);
-    NCC_addRule(ncc, "unary-expression-contents",
+    NCC_updateRule(ncc, "unary-expression",
                 "${postfix-expression} | "
-                "{ ${unary-operator} ${cast-expression} } |"
-                "{   sizeof(${type-name}) } |"
-                "{ _Alignof(${type-name}) }", 0, False, False, False);
-    NCC_addRule(ncc, "unary-expression",
-                "${unary-expression-contents} | "
-                "{ ++     ${unary-expression-contents} } | "
-                "{ \\-\\- ${unary-expression-contents} } | "
-                "{   sizeof(${type-name}) }", 0, False, False, False);
+                "{ ++     ${unary-expression} } | "
+                "{ \\-\\- ${unary-expression} } | "
+                "{ ${unary-operator} ${cast-expression} } | "
+                "{   sizeof(${unary-expression}) } | "
+                "{   sizeof(${type-name}) } | "
+                "{ _Alignof(${type-name}) }", 0, False, True, False);
 
     // Unary operator,
     NCC_updateRule(ncc, "unary-operator", "& | \\* | + | \\- | ~ | !", 0, False, False, False);
 
+    // Cast expression,
+    NCC_updateRule(ncc, "cast-expression",
+            "${unary-expression} | "
+            "{ (${type-name}) ${} ${cast-expression} }", 0, False, True, False);
+
+    // Multiplicative expression,
+    NCC_addRule(ncc, "multiplicative-expression",
+            "${cast-expression} {"
+            "   { ${} \\* ${} ${cast-expression}} | "
+            "   { ${}   / ${} ${cast-expression}} | "
+            "   { ${}   % ${} ${cast-expression}}"
+            "}^*", 0, False, True, False);
+
+    // Additive expression,
+    NCC_addRule(ncc, "additive-expression",
+                "${multiplicative-expression} {"
+                "   { ${}   + ${} ${multiplicative-expression}} | "
+                "   { ${} \\- ${} ${multiplicative-expression}}"
+                "}^*", 0, False, True, False);
+
+    // Shift expression,
+    NCC_addRule(ncc, "shift-expression",
+                "${additive-expression} {"
+                "   { ${} << ${} ${additive-expression}} | "
+                "   { ${} >> ${} ${additive-expression}}"
+                "}^*", 0, False, True, False);
+
+    // Relational expression,
+    NCC_addRule(ncc, "relational-expression",
+                "${shift-expression} {"
+                "   { ${} <  ${} ${shift-expression}} | "
+                "   { ${} >  ${} ${shift-expression}} | "
+                "   { ${} <= ${} ${shift-expression}} | "
+                "   { ${} >= ${} ${shift-expression}}"
+                "}^*", 0, False, True, False);
+
     // Document,
-    NCC_addRule(ncc, "testDocument", "${identifier} | ${integer-constant} | ${floating-constant} | ${character-constant} | ${string-literal}", printListener, True, False, False);
+    NCC_addRule(ncc, "testDocument",
+            "${primary-expression}        | "
+            "${postfix-expression}        | "
+            "${unary-expression}          | "
+            "${cast-expression}           | "
+            "${multiplicative-expression} | "
+            "${additive-expression}       | "
+            "${shift-expression}          | "
+            "${relational-expression}", printListener, True, False, False);
+}
+
+static void test(struct NCC* ncc, const char* code) {
+
+    NLOGI("", "%sTesting: %s%s", NTCOLOR(GREEN_BRIGHT), NTCOLOR(HIGHLIGHT), code);
+    int32_t matchLength = NCC_match(ncc, code);
+    int32_t codeLength = NCString.length(code);
+    if (matchLength == codeLength) {
+        NLOGI("test()", "Success!");
+    } else {
+        NLOGE("test()", "Failed! MatchLength: %d", matchLength);
+    }
+    NLOGI("", "");
 }
 
 void NMain() {
 
-    NSystemUtils.logI("C", "besm Allah :)\n");
-
-    const char* code =
-            "\"besm Allah\" //asdasdasdas\n  \"AlRa7maan AlRa7eem\"";
-
-    // Substitute,
-    struct NCC ncc;
-    NCC_initializeNCC(&ncc);
+    NSystemUtils.logI("", "besm Allah :)\n\n");
 
     // Language definition,
+    struct NCC ncc;
+    NCC_initializeNCC(&ncc);
     defineLanguage(&ncc);
 
-    // Match and cleanup,
-    int32_t matchLength = NCC_match(&ncc, code);
-    int32_t codeLength = NCString.length(code);
+    // Test,
+    test(&ncc, "\"besm Allah\" //asdasdasdas\n  \"AlRa7maan AlRa7eem\"");
+    test(&ncc, "a++");
+    test(&ncc, "a++++"); // Parses, but should fail because a++ is not assignable.
+    test(&ncc, "a * b");
+    test(&ncc, "a * b / c % d");
+    test(&ncc, "a + b");
+    test(&ncc, "a * b + c / d");
+    test(&ncc, "a << 2 >> 3");
+    test(&ncc, "a < 2 > 3 >= 4");
+    test(&ncc, "a < 2 + 3 >= 4");
+    test(&ncc, "a = b");
+    test(&ncc, "a = a * b / c % ++d + 5");
+    test(&ncc, "(a * b) + (c / d)");
+
+    // Clean up,
     NCC_destroyNCC(&ncc);
-
-    NLOGI("", "");
-
-    if (matchLength == codeLength) {
-        NLOGI("C", "Success!");
-    } else {
-        NLOGE("C", "Failed! MatchLength: %d", matchLength);
-    }
-
-    NLOGI("", "");
     NError.logAndTerminate();
 }

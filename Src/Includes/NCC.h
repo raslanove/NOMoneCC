@@ -104,8 +104,8 @@ struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
-boolean NCC_addRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
-boolean NCC_updateRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
+boolean NCC_addRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
+boolean NCC_updateRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
 int32_t NCC_match(struct NCC* ncc, const char* text); // Returns match length if matched, -1 if rejected.
 boolean NCC_popRuleVariable(struct NCC* ncc, struct NCC_Variable* outVariable); // Pops variables of the currently active rule.
 boolean NCC_getRuleVariable(struct NCC* ncc, uint32_t index, struct NCC_Variable* outVariable); // Gets variables of the currently active rule.
