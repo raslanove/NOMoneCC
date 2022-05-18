@@ -225,6 +225,66 @@ void defineLanguage(struct NCC* ncc) {
                 "   { ${} >= ${} ${shift-expression}}"
                 "}^*", 0, False, True, False);
 
+    // Equality expression,
+    NCC_addRule(ncc, "equality-expression",
+                "${relational-expression} {"
+                "   { ${} == ${} ${relational-expression}} | "
+                "   { ${} != ${} ${relational-expression}}"
+                "}^*", 0, False, True, False);
+
+    // AND expression,
+    NCC_addRule(ncc, "and-expression",
+                "${equality-expression} {"
+                "   ${} & ${} ${equality-expression}"
+                "}^*", 0, False, True, False);
+
+    // Exclusive OR expression,
+    NCC_addRule(ncc, "xor-expression",
+                "${and-expression} {"
+                "   ${} \\^ ${} ${and-expression}"
+                "}^*", 0, False, True, False);
+
+    // Inclusive OR expression,
+    NCC_addRule(ncc, "or-expression",
+                "${xor-expression} {"
+                "   ${} \\| ${} ${xor-expression}"
+                "}^*", 0, False, True, False);
+
+    // Logical AND expression,
+    NCC_addRule(ncc, "logical-and-expression",
+                "${or-expression} {"
+                "   ${} && ${} ${or-expression}"
+                "}^*", 0, False, True, False);
+
+    // Logical OR expression,
+    NCC_addRule(ncc, "logical-or-expression",
+                "${logical-and-expression} {"
+                "   ${} \\|\\| ${} ${logical-and-expression}"
+                "}^*", 0, False, True, False);
+
+    // Conditional expression,
+    NCC_addRule(ncc, "conditional-expression", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "conditional-expression",
+                "${logical-or-expression} | "
+                "{${logical-or-expression} ${} ? ${} ${expression} ${} : ${} ${conditional-expression}}", 0, False, True, False);
+
+    // Assignment expression,
+    NCC_addRule(ncc, "assignment-operator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "assignment-expression",
+                   "${conditional-expression} | "
+                   "{${unary-expression} ${} ${assignment-operator} ${} ${assignment-expression}}", 0, False, True, False);
+
+    // Assignment operator,
+    NCC_updateRule(ncc, "assignment-operator", "= | {\\*=} | {/=} | {%=} | {+=} | {\\-=} | {<<=} | {>>=} | {&=} | {\\^=} | {\\|=}", 0, False, False, False);
+
+    // Expression,
+    NCC_updateRule(ncc, "expression",
+                "${assignment-expression} {"
+                "   ${} , ${} ${assignment-expression}"
+                "}^*", 0, False, True, False);
+
+    NCC_addRule(ncc, "constant-expression", "${conditional-expression}", 0, False, True, False);
+
     // Document,
     NCC_addRule(ncc, "testDocument",
             "${primary-expression}        | "
@@ -234,7 +294,19 @@ void defineLanguage(struct NCC* ncc) {
             "${multiplicative-expression} | "
             "${additive-expression}       | "
             "${shift-expression}          | "
-            "${relational-expression}", printListener, True, False, False);
+            "${relational-expression}     | "
+            "${equality-expression}       | "
+            "${and-expression}            | "
+            "${xor-expression}            | "
+            "${or-expression}             | "
+            "${logical-and-expression}    | "
+            "${logical-or-expression}     | "
+            "${conditional-expression}    | "
+            "${assignment-expression}     | "
+            "${expression}                | "
+            "${constant-expression}"
+            , printListener, True, False, False);
+
 }
 
 static void test(struct NCC* ncc, const char* code) {
@@ -245,7 +317,7 @@ static void test(struct NCC* ncc, const char* code) {
     if (matchLength == codeLength) {
         NLOGI("test()", "Success!");
     } else {
-        NLOGE("test()", "Failed! MatchLength: %d", matchLength);
+        NERROR("test()", "Failed! MatchLength: %d", matchLength);
     }
     NLOGI("", "");
 }
@@ -270,6 +342,13 @@ void NMain() {
     test(&ncc, "a << 2 >> 3");
     test(&ncc, "a < 2 > 3 >= 4");
     test(&ncc, "a < 2 + 3 >= 4");
+    test(&ncc, "a == b");
+    test(&ncc, "a & b");
+    test(&ncc, "a ^ b");
+    test(&ncc, "a | b");
+    test(&ncc, "a && b");
+    test(&ncc, "a || b");
+    test(&ncc, "a ? b : c");
     test(&ncc, "a = b");
     test(&ncc, "a = a * b / c % ++d + 5");
     test(&ncc, "(a * b) + (c / d)");
