@@ -4,6 +4,9 @@
 
 #include <NCC.h>
 
+#define TEST_EXPRESSIONS  0
+#define TEST_DECLARATIONS 1
+
 void printListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     NLOGI("", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
     struct NCC_Variable variable;
@@ -128,6 +131,10 @@ void defineLanguage(struct NCC* ncc) {
     // Phrase Structure,
     // =====================================
 
+    // -------------------------------------
+    // Expressions,
+    // -------------------------------------
+
     // TODO: add ${} where needed...
 
     // Primary expression,
@@ -167,7 +174,12 @@ void defineLanguage(struct NCC* ncc) {
             "{ ( ${type-name} ) \\{ ${initializer-list} , \\} }", 0, False, False, False);
     NCC_addRule(ncc, "postfix-expression",
             "${postfix-expression-contents} {"
-            "   {[${expression}]} | {(${argument-expression-list}|${ε})} | {.${identifier}} | {\\-> ${identifier}} | {++} | {\\-\\-}"
+            "   {[${expression}]} | "
+            "   {(${argument-expression-list}|${ε})} | "
+            "   {.${identifier}} | "
+            "   {\\-> ${identifier}} | "
+            "   {++} | "
+            "   {\\-\\-}"
             "}^*", 0, False, True, False);
 
     // Argument expression list,
@@ -285,6 +297,165 @@ void defineLanguage(struct NCC* ncc) {
 
     NCC_addRule(ncc, "constant-expression", "${conditional-expression}", 0, False, True, False);
 
+    // -------------------------------------
+    // Declarations,
+    // -------------------------------------
+
+    // Declaration,
+    NCC_addRule(ncc, "declaration-specifiers", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "init-declarator-list", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "static_assert-declaration", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "declaration",
+            "{${declaration-specifiers} ${} ${init-declarator-list}|${ε} ${} ;} | "
+            "${static_assert-declaration}", 0, False, True, False);
+
+    // Declaration specifiers,
+    NCC_addRule(ncc, "storage-class-specifier", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "type-specifier", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "type-qualifier", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "function-specifier", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "alignment-specifier", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "declaration-specifiers",
+            "${storage-class-specifier} | "
+            "${type-specifier} | "
+            "${type-qualifier} | "
+            "${function-specifier} | "
+            "${alignment-specifier} "
+            "${} ${declaration-specifiers}|${ε}", 0, False, False, False);
+
+    // Init declarator list,
+    NCC_addRule(ncc, "init-declarator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "init-declarator-list",
+                   "${init-declarator} { "
+                   "   ${} , ${} ${init-declarator}"
+                   "}^*", 0, False, False, False);
+
+    // Init declarator,
+    NCC_addRule(ncc, "declarator", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "initializer", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "init-declarator-list",
+                   "${declarator} ${} = ${} ${initializer}", 0, False, False, False);
+
+    // Storage class specifier,
+    NCC_updateRule(ncc, "storage-class-specifier",
+                   "{typedef} | {extern} | {static} | {_Thread_local} | {auto} | {register}", 0, False, False, False);
+
+    // Type specifier,
+    NCC_addRule(ncc, "atomic-type-specifier", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "struct-or-union-specifier", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "enum-specifier", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "typedef-name", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "type-specifier",
+                   "{void} | {char} | "
+                   "{short} | {int} | {long} | "
+                   "{float} | {double} | "
+                   "{signed} | {unsigned} | "
+                   "{_Bool} | {_Complex} | "
+                   "${atomic-type-specifier} | "
+                   "${struct-or-union-specifier} | "
+                   "${enum-specifier} |"
+                   "${typedef-name}", 0, False, False, False);
+
+    // Struct or union specifier,
+    NCC_addRule(ncc, "struct-or-union", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "struct-declaration-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "struct-or-union-specifier",
+            "${struct-or-union} ${} "
+            "{${identifier}|${ε} ${} ${struct-declaration-list}} | "
+            " ${identifier}", 0, False, False, False);
+
+    // Struct or union,
+    NCC_updateRule(ncc, "struct-or-union",
+            "{struct} | {union}", 0, False, False, False);
+
+    // Struct declaration list,
+    NCC_addRule(ncc, "struct-declaration", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "struct-declaration-list",
+                   "${struct-declaration} { "
+                   "   ${} ${struct-declaration}"
+                   "}^*", 0, False, False, False);
+
+    // Struct declaration,
+    NCC_addRule(ncc, "specifier-qualifier-list", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "struct-declarator-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "struct-declaration",
+                   "{${specifier-qualifier-list} ${} ${struct-declarator-list}|${ε} ;} | "
+                   "${static_assert-declaration}", 0, False, False, False);
+
+    // Specifier qualifier list,
+    NCC_updateRule(ncc, "specifier-qualifier-list",
+                   "${type-specifier} | ${type-qualifier} { "
+                   "   ${} ${type-specifier} | ${type-qualifier}"
+                   "}^*", 0, False, False, False);
+
+    // Struct declarator list,
+    NCC_addRule(ncc, "struct-declarator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "struct-declarator-list",
+                   "${struct-declarator} { "
+                   "   ${} , ${} ${struct-declarator}"
+                   "}^*", 0, False, False, False);
+
+    // Struct declarator,
+    NCC_updateRule(ncc, "struct-declarator",
+                   " ${declarator} | "
+                   "{${declarator}|${ε} ${} : ${} ${constant-expression}}", 0, False, False, False);
+
+    // Enum specifier,
+    NCC_addRule(ncc, "enumerator-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "enum-specifier",
+                   "{ {enum} ${} ${identifier}|${ε} ${} \\{ ${enumerator-list} ${} ,|${ε} ${} \\} } | "
+                   "{ {enum} ${} ${identifier} }", 0, False, False, False);
+
+    // Enumerator list,
+    NCC_addRule(ncc, "enumerator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "enumerator-list",
+                   "${enumerator} {"
+                   "   ${} , ${} ${enumerator}"
+                   "}^*", 0, False, False, False);
+
+    // Enumerator,
+    NCC_updateRule(ncc, "enumerator",
+                   "${enumeration-constant} { ${} = ${} ${constant-expression} }|${ε}", 0, False, False, False);
+
+    // Atomic type specifier,
+    NCC_updateRule(ncc, "atomic-type-specifier",
+                   "{_Atomic} ${} ( ${} ${type-name} ${} )", 0, False, False, False);
+
+    // Type qualifier,
+    NCC_updateRule(ncc, "type-qualifier",
+                   "{const} | {restrict} | {volatile} | {_Atomic}", 0, False, False, False);
+
+    // Function specifier,
+    NCC_updateRule(ncc, "function-specifier",
+                   "{inline} | {_Noreturn}", 0, False, False, False);
+
+    // Alignment specifier,
+    NCC_updateRule(ncc, "alignment-specifier",
+                   "{_Alineas} ${} ( ${} ${type-name}|${constant-expression} ${} )", 0, False, False, False);
+
+    // Declarator,
+    NCC_addRule(ncc, "pointer", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "direct-declarator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "declarator",
+                   "${pointer}|${ε} ${} ${direct-declarator}", 0, False, False, False);
+
+    // Direct declarator,
+    NCC_addRule(ncc, "type-qualifier-list", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "parameter-type-list", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "identifier-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "direct-declarator",
+                   "{${identifier} | {(${} ${declarator} ${})}} {"
+                   "   { ${} [ ${}              ${type-qualifier-list}|${ε} ${}              ${assignment-expression}|${ε} ${} ]} | "
+                   "   { ${} [ ${} {static} ${} ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${} ]} | "
+                   "   { ${} [ ${}              ${type-qualifier-list}      ${} {static} ${} ${assignment-expression}      ${} ]} | "
+                   "   { ${} [ ${}              ${type-qualifier-list}|${ε} ${}      \\* ${}                                   ]} | "
+                   "   { ${} ( ${} ${parameter-type-list}  ${} )} | "
+                   "   { ${} ( ${} ${identifier-list}|${ε} ${} )}"
+                   "}^*", 0, False, False, False);
+
+    // Pointer,
+    // ...xxx
+
     // Document,
     NCC_addRule(ncc, "testDocument",
             "${primary-expression}        | "
@@ -332,6 +503,7 @@ void NMain() {
     defineLanguage(&ncc);
 
     // Test,
+    #if TEST_EXPRESSIONS
     test(&ncc, "\"besm Allah\" //asdasdasdas\n  \"AlRa7maan AlRa7eem\"");
     test(&ncc, "a++");
     test(&ncc, "a++++"); // Parses, but should fail because a++ is not assignable.
@@ -352,6 +524,11 @@ void NMain() {
     test(&ncc, "a = b");
     test(&ncc, "a = a * b / c % ++d + 5");
     test(&ncc, "(a * b) + (c / d)");
+    #endif
+
+    #if TEST_DECLARATIONS
+
+    #endif
 
     // Clean up,
     NCC_destroyNCC(&ncc);
