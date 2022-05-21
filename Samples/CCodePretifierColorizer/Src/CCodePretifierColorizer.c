@@ -306,8 +306,8 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "init-declarator-list", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "static_assert-declaration", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "declaration",
-            "{${declaration-specifiers} ${} ${init-declarator-list}|${ε} ${} ;} | "
-            "${static_assert-declaration}", 0, False, True, False);
+                   "{${declaration-specifiers} ${} ${init-declarator-list}|${ε} ${} ;} | "
+                   "${static_assert-declaration}", 0, False, True, False);
 
     // Declaration specifiers,
     NCC_addRule(ncc, "storage-class-specifier", "STUB!", 0, False, False, False);
@@ -316,12 +316,12 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "function-specifier", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "alignment-specifier", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "declaration-specifiers",
-            "${storage-class-specifier} | "
-            "${type-specifier} | "
-            "${type-qualifier} | "
-            "${function-specifier} | "
-            "${alignment-specifier} "
-            "${} ${declaration-specifiers}|${ε}", 0, False, False, False);
+                   "${storage-class-specifier} | "
+                   "${type-specifier} | "
+                   "${type-qualifier} | "
+                   "${function-specifier} | "
+                   "${alignment-specifier} "
+                   "${} ${declaration-specifiers}|${ε}", 0, False, False, False);
 
     // Init declarator list,
     NCC_addRule(ncc, "init-declarator", "STUB!", 0, False, False, False);
@@ -333,8 +333,8 @@ void defineLanguage(struct NCC* ncc) {
     // Init declarator,
     NCC_addRule(ncc, "declarator", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "initializer", "STUB!", 0, False, False, False);
-    NCC_updateRule(ncc, "init-declarator-list",
-                   "${declarator} ${} = ${} ${initializer}", 0, False, False, False);
+    NCC_updateRule(ncc, "init-declarator",
+                   "${declarator} {${} = ${} ${initializer}}|${ε}", 0, False, False, False);
 
     // Storage class specifier,
     NCC_updateRule(ncc, "storage-class-specifier",
@@ -360,9 +360,9 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "struct-or-union", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "struct-declaration-list", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "struct-or-union-specifier",
-            "${struct-or-union} ${} "
-            "{${identifier}|${ε} ${} ${struct-declaration-list}} | "
-            " ${identifier}", 0, False, False, False);
+                   "${struct-or-union} ${} "
+                   "{${identifier}|${ε} ${} ${struct-declaration-list}} | "
+                   " ${identifier}", 0, False, False, False);
 
     // Struct or union,
     NCC_updateRule(ncc, "struct-or-union",
@@ -454,7 +454,99 @@ void defineLanguage(struct NCC* ncc) {
                    "}^*", 0, False, False, False);
 
     // Pointer,
-    // ...xxx
+    NCC_updateRule(ncc, "pointer",
+                   "\\* ${} ${type-qualifier-list}|${ε} ${} ${pointer}|${ε}", 0, False, False, False);
+
+    // Type qualifier list,
+    NCC_updateRule(ncc, "type-qualifier-list",
+                   "${type-qualifier} {"
+                   "   ${} ${type-qualifier}"
+                   "}^*", 0, False, False, False);
+
+    // Parameter type list,
+    NCC_addRule(ncc, "parameter-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "parameter-type-list",
+                   "${parameter-list} {${} , ${} ...}|${ε}", 0, False, False, False);
+
+    // Parameter list,
+    NCC_addRule(ncc, "parameter-declaration", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "parameter-list",
+                   "${parameter-declaration} {"
+                   "   ${} , ${} ${parameter-declaration}"
+                   "}^*", 0, False, False, False);
+
+    // Parameter declaration,
+    NCC_addRule(ncc, "abstract-declarator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "parameter-declaration",
+                   "${declaration-specifiers} ${} ${declarator}|${abstract-declarator}|${ε}", 0, False, False, False);
+
+    // Identifier list,
+    NCC_updateRule(ncc, "identifier-list",
+                   "${identifier} {"
+                   "   ${} , ${} ${identifier}"
+                   "}^*", 0, False, False, False);
+
+    // Type name,
+    NCC_updateRule(ncc, "type-name",
+                   "${specifier-qualifier-list} ${} ${abstract-declarator}|${ε}", 0, False, False, False);
+
+    // Abstract declarator,
+    NCC_addRule(ncc, "direct-abstract-declarator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "abstract-declarator",
+                   "${pointer} | "
+                   "{ ${pointer}|${ε} ${} ${direct-abstract-declarator} }", 0, False, False, False);
+
+    // Direct abstract declarator,
+    NCC_addRule(ncc, "direct-abstract-declarator-content",
+                   "{(${} ${abstract-declarator} ${})} | "
+                   "{[${}              ${type-qualifier-list}|${ε} ${}              ${assignment-expression}|${ε} ${}]} | "
+                   "{[${} {static} ${} ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${}]} | "
+                   "{[${}              ${type-qualifier-list}      ${} {static} ${} ${assignment-expression}      ${}]} | "
+                   "{[${} \\*      ${}                                                                               ]} | "
+                   "{(${} ${parameter-type-list}|${ε} ${})}", 0, False, False, False);
+    NCC_updateRule(ncc, "direct-abstract-declarator",
+                   "${direct-abstract-declarator-content} {"
+                   "   ${} ${direct-abstract-declarator-content}"
+                   "}^*", 0, False, False, False);
+
+    // Typedef name,
+    NCC_updateRule(ncc, "typedef-name",
+                   "${identifier}", 0, False, False, False);
+
+    // Initializer,
+    NCC_updateRule(ncc, "initializer",
+                   "${assignment-expression} | "
+                   "{ \\{ ${} ${initializer-list} ${} ,|${ε} ${} \\} }", 0, False, False, False);
+
+    // Initializer list,
+    NCC_addRule(ncc, "designation", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "initializer-list-content",
+                   "${designation}|${ε} ${} ${initializer}", 0, False, False, False);
+    NCC_updateRule(ncc, "initializer-list",
+                   "${initializer-list-content} {"
+                   "   ${} , ${} ${initializer-list-content}"
+                   "}^*", 0, False, False, False);
+
+    // Designation,
+    NCC_addRule(ncc, "designator-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "designation",
+                   "${designator-list} ${} =", 0, False, False, False);
+
+    // Designator list,
+    NCC_addRule(ncc, "designator", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "designator-list",
+                   "${designator} {"
+                   "   ${} ${designator}"
+                   "}^*", 0, False, False, False);
+
+    // Designator,
+    NCC_updateRule(ncc, "designator",
+                   "{[${} ${constant-expression} ${}]} | "
+                   "{ . ${} ${identifier}}", 0, False, False, False);
+
+    // static_assert declaration,
+    NCC_updateRule(ncc, "static_assert-declaration",
+                   "{_Static_assert} ${} ( ${} ${constant-expression} ${} , ${} ${string-literal} ${} ) ${} ;", 0, False, False, False);
 
     // Document,
     NCC_addRule(ncc, "testDocument",
@@ -475,9 +567,8 @@ void defineLanguage(struct NCC* ncc) {
             "${conditional-expression}    | "
             "${assignment-expression}     | "
             "${expression}                | "
-            "${constant-expression}"
-            , printListener, True, False, False);
-
+            "${constant-expression}       | "
+            "${declaration}", printListener, True, False, False);
 }
 
 static void test(struct NCC* ncc, const char* code) {
@@ -527,7 +618,8 @@ void NMain() {
     #endif
 
     #if TEST_DECLARATIONS
-
+    test(&ncc, "int a;");
+    test(&ncc, "int a,b;");
     #endif
 
     // Clean up,
