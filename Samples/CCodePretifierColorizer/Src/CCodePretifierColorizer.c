@@ -346,6 +346,8 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "enum-specifier", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "typedef-name", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "type-specifier",
+                   // TODO: enable typedef when NCC is ready to handle it...
+                   /*
                    "{void} | {char} | "
                    "{short} | {int} | {long} | "
                    "{float} | {double} | "
@@ -355,13 +357,22 @@ void defineLanguage(struct NCC* ncc) {
                    "${struct-or-union-specifier} | "
                    "${enum-specifier} |"
                    "${typedef-name}", 0, False, False, False);
+                    */
+                   "{void} | {char} | "
+                   "{short} | {int} | {long} | "
+                   "{float} | {double} | "
+                   "{signed} | {unsigned} | "
+                   "{_Bool} | {_Complex} | "
+                   "${atomic-type-specifier} | "
+                   "${struct-or-union-specifier} | "
+                   "${enum-specifier}", 0, False, False, False);
 
     // Struct or union specifier,
     NCC_addRule(ncc, "struct-or-union", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "struct-declaration-list", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "struct-or-union-specifier",
                    "${struct-or-union} ${} "
-                   "{${identifier}|${ε} ${} ${struct-declaration-list}} | "
+                   "{${identifier}|${ε} ${} \\{ ${} ${struct-declaration-list} ${} \\}} | "
                    " ${identifier}", 0, False, False, False);
 
     // Struct or union,
@@ -379,7 +390,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "specifier-qualifier-list", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "struct-declarator-list", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "struct-declaration",
-                   "{${specifier-qualifier-list} ${} ${struct-declarator-list}|${ε} ;} | "
+                   "{${specifier-qualifier-list} ${} ${struct-declarator-list}|${ε} ${} ;} | "
                    "${static_assert-declaration}", 0, False, False, False);
 
     // Specifier qualifier list,
@@ -619,7 +630,25 @@ void NMain() {
 
     #if TEST_DECLARATIONS
     test(&ncc, "int a;");
-    test(&ncc, "int a,b;");
+    test(&ncc, "int a, b;");        // Fails when typedef is enabled because declaration starts with declaration-specifiers, which
+                                    // includes an identifier-based element (typedef-name), so the first identifier is grouped
+                                    // together with the specifiers, thus, init-declarator-list is missing its first identifier
+                                    // before the comma, so it doesn't match.
+    test(&ncc, "int a = 5;");
+    test(&ncc, "int a = 5, b;");
+    test(&ncc, "struct NCC ncc;");
+    test(&ncc, "struct MyStruct { int a, b; float c; } myStructInstance;");
+    test(&ncc, "struct NCC {\n"
+               "   void* extraData;\n"
+               "   struct NVector rules; // Pointers to rules, not rules, so that they don't get relocated when more rules are added.\n"
+               "   struct NVector variables;\n"
+               "   struct NByteVector *matchRoute, *tempRoute1, *tempRoute2, *tempRoute3, *tempRoute4; // Pointers to nodes. TODO: maybe turn them into an array?\n"
+               "};");
+    // TODO: enable when typedef is implemented...
+    //test(&ncc, "uint32_t a;");      // Fails because it requires a typedef-ed type uint32_t.
+    test(&ncc, "int NCC_getRuleVariable(struct NCC* ncc, int index, struct NCC_Variable* outVariable);");
+
+    // TODO: Use the complex statements from your own project for testing...
     #endif
 
     // Clean up,

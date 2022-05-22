@@ -710,6 +710,9 @@ static int32_t repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     int32_t  followingSubRuleMatchLength = nodeData->followingSubRule->match(nodeData->followingSubRule, ncc, text);
     if (followingSubRuleMatchLength>0) return followingSubRuleMatchLength;
 
+    // TODO: if following subrule is the end of this sub-rule, we should check the next of the current sub-rule, which
+    // should be kept in a separate stack?
+
     // Following sub-rule didn't match, attempt repeating (on the temporary route),
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
     uint32_t tempRouteMark = NByteVector.size(ncc->matchRoute);
