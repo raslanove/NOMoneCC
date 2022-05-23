@@ -5,7 +5,8 @@
 #include <NCC.h>
 
 #define TEST_EXPRESSIONS  0
-#define TEST_DECLARATIONS 1
+#define TEST_DECLARATIONS 0
+#define TEST_STATEMENTS   1
 
 void printListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     NLOGI("", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
@@ -17,6 +18,10 @@ void printListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesC
 }
 
 void definePreprocessing(struct NCC* ncc) {
+
+    // =====================================
+    // Preprocessing directives,
+    // =====================================
 
     // Header name,
     NCC_addRule(ncc, "h-char", "\x01-\x09 | \x0b-\xff", 0, False, False, False); // All characters except new-line.
@@ -128,14 +133,12 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "string-literal", "${string-literal-contents} {${} ${string-literal-contents}}|${ε}", 0, False, True, False);
 
     // =====================================
-    // Phrase Structure,
+    // Phrase structure,
     // =====================================
 
     // -------------------------------------
     // Expressions,
     // -------------------------------------
-
-    // TODO: add ${} where needed...
 
     // Primary expression,
     NCC_addRule(ncc, "expression", "STUB!", 0, False, False, False);
@@ -144,7 +147,7 @@ void defineLanguage(struct NCC* ncc) {
             "${identifier} | "
             "${constant} | "
             "${string-literal} | "
-            "{ (${expression}) } | "
+            "{ ( ${} ${expression} ${} ) } | "
             "${generic-selection}", 0, False, True, False);
 
     // Generic selection,
@@ -153,37 +156,43 @@ void defineLanguage(struct NCC* ncc) {
     //NLOGE("", "%d\n", _Generic(1, int: 7, float:1, double:2, long double:3, default:0));
     NCC_addRule(ncc, "assignment-expression", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "generic-assoc-list", "STUB!", 0, False, False, False);
-    NCC_updateRule(ncc, "generic-selection", "_Generic ( ${assignment-expression}, ${generic-assoc-list} )", 0, False, False, False);
+    NCC_updateRule(ncc, "generic-selection",
+            "_Generic ${} ( ${} ${assignment-expression} ${} , ${} ${generic-assoc-list} ${} )", 0, False, False, False);
 
     // Generic assoc list,
     NCC_addRule(ncc, "generic-association", "STUB!", 0, False, False, False);
-    NCC_updateRule(ncc, "generic-assoc-list", "${generic-association} {, ${generic-association}}^*", 0, False, False, False);
+    NCC_updateRule(ncc, "generic-assoc-list",
+            "${generic-association} {"
+            "   ${} , ${} ${generic-association}"
+            "}^*", 0, False, False, False);
 
     // Generic association,
     NCC_addRule(ncc, "type-name", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "generic-association",
-            "{${type-name} : ${assignment-expression}} |"
-            "{default : ${assignment-expression}}", 0, False, False, False);
+            "{${type-name} ${} : ${} ${assignment-expression}} |"
+            "{default      ${} : ${} ${assignment-expression}}", 0, False, False, False);
 
     // Postfix expression,
     NCC_addRule(ncc, "argument-expression-list", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "initializer-list", "STUB!", 0, False, False, False);
     NCC_addRule(ncc, "postfix-expression-contents",
             "${primary-expression} | "
-            "{ ( ${type-name} ) \\{ ${initializer-list}   \\} } | "
-            "{ ( ${type-name} ) \\{ ${initializer-list} , \\} }", 0, False, False, False);
+            "{ ( ${} ${type-name} ${} ) ${} \\{ ${} ${initializer-list} ${} ,|${ε} ${} \\} }", 0, False, False, False);
     NCC_addRule(ncc, "postfix-expression",
             "${postfix-expression-contents} {"
-            "   {[${expression}]} | "
-            "   {(${argument-expression-list}|${ε})} | "
-            "   {.${identifier}} | "
-            "   {\\-> ${identifier}} | "
-            "   {++} | "
-            "   {\\-\\-}"
+            "   {${} [ ${} ${expression} ${} ]} | "
+            "   {${} ( ${} ${argument-expression-list}|${ε} ${} )} | "
+            "   {${} .     ${} ${identifier}} | "
+            "   {${} \\->  ${} ${identifier}} | "
+            "   {${} ++} | "
+            "   {${} \\-\\-}"
             "}^*", 0, False, True, False);
 
     // Argument expression list,
-    NCC_updateRule(ncc, "argument-expression-list", "${assignment-expression} {, ${assignment-expression}}^*", 0, False, False, False);
+    NCC_updateRule(ncc, "argument-expression-list",
+            "${assignment-expression} {"
+            "   ${} , ${} ${assignment-expression}"
+            "}^*", 0, False, False, False);
 
     // Unary expression,
     NCC_addRule(ncc, "unary-expression", "STUB!", 0, False, False, False);
@@ -191,12 +200,12 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "cast-expression", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "unary-expression",
                 "${postfix-expression} | "
-                "{ ++     ${unary-expression} } | "
-                "{ \\-\\- ${unary-expression} } | "
-                "{ ${unary-operator} ${cast-expression} } | "
-                "{   sizeof(${unary-expression}) } | "
-                "{   sizeof(${type-name}) } | "
-                "{ _Alignof(${type-name}) }", 0, False, True, False);
+                "{ ++     ${} ${unary-expression} } | "
+                "{ \\-\\- ${} ${unary-expression} } | "
+                "{ ${unary-operator} ${} ${cast-expression} } | "
+                "{   sizeof ${} ( ${} ${unary-expression} ${} ) } | "
+                "{   sizeof ${} ( ${} ${type-name}        ${} ) } | "
+                "{ _Alignof ${} ( ${} ${type-name}        ${} ) }", 0, False, True, False);
 
     // Unary operator,
     NCC_updateRule(ncc, "unary-operator", "& | \\* | + | \\- | ~ | !", 0, False, False, False);
@@ -204,7 +213,7 @@ void defineLanguage(struct NCC* ncc) {
     // Cast expression,
     NCC_updateRule(ncc, "cast-expression",
             "${unary-expression} | "
-            "{ (${type-name}) ${} ${cast-expression} }", 0, False, True, False);
+            "{ ( ${} ${type-name} ${} ) ${} ${cast-expression} }", 0, False, True, False);
 
     // Multiplicative expression,
     NCC_addRule(ncc, "multiplicative-expression",
@@ -414,8 +423,8 @@ void defineLanguage(struct NCC* ncc) {
     // Enum specifier,
     NCC_addRule(ncc, "enumerator-list", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "enum-specifier",
-                   "{ {enum} ${} ${identifier}|${ε} ${} \\{ ${enumerator-list} ${} ,|${ε} ${} \\} } | "
-                   "{ {enum} ${} ${identifier} }", 0, False, False, False);
+                   "{ enum ${} ${identifier}|${ε} ${} \\{ ${enumerator-list} ${} ,|${ε} ${} \\} } | "
+                   "{ enum ${} ${identifier} }", 0, False, False, False);
 
     // Enumerator list,
     NCC_addRule(ncc, "enumerator", "STUB!", 0, False, False, False);
@@ -430,7 +439,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Atomic type specifier,
     NCC_updateRule(ncc, "atomic-type-specifier",
-                   "{_Atomic} ${} ( ${} ${type-name} ${} )", 0, False, False, False);
+                   "_Atomic ${} ( ${} ${type-name} ${} )", 0, False, False, False);
 
     // Type qualifier,
     NCC_updateRule(ncc, "type-qualifier",
@@ -442,7 +451,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Alignment specifier,
     NCC_updateRule(ncc, "alignment-specifier",
-                   "{_Alineas} ${} ( ${} ${type-name}|${constant-expression} ${} )", 0, False, False, False);
+                   "_Alineas ${} ( ${} ${type-name}|${constant-expression} ${} )", 0, False, False, False);
 
     // Declarator,
     NCC_addRule(ncc, "pointer", "STUB!", 0, False, False, False);
@@ -457,9 +466,9 @@ void defineLanguage(struct NCC* ncc) {
     NCC_updateRule(ncc, "direct-declarator",
                    "{${identifier} | {(${} ${declarator} ${})}} {"
                    "   { ${} [ ${}              ${type-qualifier-list}|${ε} ${}              ${assignment-expression}|${ε} ${} ]} | "
-                   "   { ${} [ ${} {static} ${} ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${} ]} | "
-                   "   { ${} [ ${}              ${type-qualifier-list}      ${} {static} ${} ${assignment-expression}      ${} ]} | "
-                   "   { ${} [ ${}              ${type-qualifier-list}|${ε} ${}      \\* ${}                                   ]} | "
+                   "   { ${} [ ${} static ${}   ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${} ]} | "
+                   "   { ${} [ ${}              ${type-qualifier-list}      ${} static   ${} ${assignment-expression}      ${} ]} | "
+                   "   { ${} [ ${}              ${type-qualifier-list}|${ε} ${} \\*      ${}                                   ]} | "
                    "   { ${} ( ${} ${parameter-type-list}  ${} )} | "
                    "   { ${} ( ${} ${identifier-list}|${ε} ${} )}"
                    "}^*", 0, False, False, False);
@@ -511,9 +520,9 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(ncc, "direct-abstract-declarator-content",
                    "{(${} ${abstract-declarator} ${})} | "
                    "{[${}              ${type-qualifier-list}|${ε} ${}              ${assignment-expression}|${ε} ${}]} | "
-                   "{[${} {static} ${} ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${}]} | "
-                   "{[${}              ${type-qualifier-list}      ${} {static} ${} ${assignment-expression}      ${}]} | "
-                   "{[${} \\*      ${}                                                                               ]} | "
+                   "{[${} static ${}   ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${}]} | "
+                   "{[${}              ${type-qualifier-list}      ${} static ${}   ${assignment-expression}      ${}]} | "
+                   "{[${} \\*    ${}                                                                                 ]} | "
                    "{(${} ${parameter-type-list}|${ε} ${})}", 0, False, False, False);
     NCC_updateRule(ncc, "direct-abstract-declarator",
                    "${direct-abstract-declarator-content} {"
@@ -539,12 +548,12 @@ void defineLanguage(struct NCC* ncc) {
                    "}^*", 0, False, False, False);
 
     // Designation,
-    NCC_addRule(ncc, "designator-list", "STUB!", 0, False, False, False);
+    NCC_addRule   (ncc, "designator-list", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "designation",
                    "${designator-list} ${} =", 0, False, False, False);
 
     // Designator list,
-    NCC_addRule(ncc, "designator", "STUB!", 0, False, False, False);
+    NCC_addRule   (ncc, "designator", "STUB!", 0, False, False, False);
     NCC_updateRule(ncc, "designator-list",
                    "${designator} {"
                    "   ${} ${designator}"
@@ -557,9 +566,101 @@ void defineLanguage(struct NCC* ncc) {
 
     // static_assert declaration,
     NCC_updateRule(ncc, "static_assert-declaration",
-                   "{_Static_assert} ${} ( ${} ${constant-expression} ${} , ${} ${string-literal} ${} ) ${} ;", 0, False, False, False);
+                   "_Static_assert ${} ( ${} ${constant-expression} ${} , ${} ${string-literal} ${} ) ${} ;", 0, False, False, False);
 
-    // Document,
+    // -------------------------------------
+    // Statements,
+    // -------------------------------------
+
+    // Statement,
+    NCC_addRule(ncc,    "labeled-statement", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc,   "compound-statement", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "expression-statement", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc,  "selection-statement", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc,  "iteration-statement", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc,       "jump-statement", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "statement",
+                   "   ${labeled-statement} | "
+                   "  ${compound-statement} | "
+                   "${expression-statement} | "
+                   " ${selection-statement} | "
+                   " ${iteration-statement} | "
+                   "      ${jump-statement}", 0, False, True, False);
+
+    // Labeled statement,
+    NCC_updateRule(ncc, "labeled-statement",
+                   "{${identifier}                   ${} : ${} ${statement}} | "
+                   "{case ${} ${constant-expression} ${} : ${} ${statement}} | "
+                   "{default                         ${} : ${} ${statement}}", 0, False, True, False);
+
+    // Compound statement,
+    NCC_addRule   (ncc, "block-item-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "compound-statement",
+                   "\\{ ${} ${block-item-list}|${ε} ${} \\}", 0, False, False, False);
+
+    // Block item list,
+    NCC_addRule   (ncc, "block-item", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "block-item-list",
+                   "${block-item} {"
+                   "   ${} ${block-item}"
+                   "}^*", 0, False, False, False);
+
+    // Block item,
+    NCC_updateRule(ncc, "block-item",
+                   "${declaration} | ${statement}", 0, False, False, False);
+
+    // Expression statement,
+    NCC_updateRule(ncc, "expression-statement",
+                   "${expression}|${ε} ${} ;", 0, False, True, False);
+
+    // Selection statement,
+    NCC_updateRule(ncc, "selection-statement",
+                   "{ if     ${} ( ${} ${expression} ${} ) ${} ${statement} {${} else ${} ${statement}}|${ε} } | "
+                   "{ switch ${} ( ${} ${expression} ${} ) ${} ${statement}                                  }", 0, False, True, False);
+
+    // Iteration statement,
+    NCC_updateRule(ncc, "iteration-statement",
+                   "{ while ${}                        ( ${} ${expression} ${} ) ${} ${statement} } | "
+                   "{ do    ${} ${statement} ${} while ( ${} ${expression} ${} ) ${} ;            } | "
+                   "{ for   ${} ( ${}                    ${expression}|${ε} ${} ; ${} ${expression}|${ε} ${} ; ${} ${expression}|${ε} ${} ) ${} ${statement} } | "
+                   "{ for   ${} ( ${} ${declaration} ${} ${expression}|${ε} ${} ;                              ${} ${expression}|${ε} ${} ) ${} ${statement} }", 0, False, True, False);
+
+    // Jump statement,
+    NCC_updateRule(ncc, "jump-statement",
+                   "{ goto     ${} ${identifier}      ${} ; } | "
+                   "{ continue ${}                        ; } | "
+                   "{ break    ${}                        ; } | "
+                   "{ return   ${} ${expression}|${ε} ${} ; }", 0, False, True, False);
+
+    // -------------------------------------
+    // External definitions,
+    // -------------------------------------
+
+    // Translation unit,
+    NCC_addRule(ncc, "external-declaration", "STUB!", 0, False, False, False);
+    NCC_addRule(ncc, "translation-unit",
+                   "${} ${external-declaration} {{"
+                   "   ${} ${external-declaration}"
+                   "}^*} ${}", 0, False, True, False); // Encapsulated the repeat in a sub-rule to avoid early termination. Can
+                                                       // we consider early termination a feature now?
+
+    // External declaration,
+    NCC_addRule   (ncc, "function-definition", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "external-declaration",
+                   "${function-definition} | ${declaration}", 0, False, False, False);
+
+    // Function definition,
+    NCC_addRule   (ncc, "declaration-list", "STUB!", 0, False, False, False);
+    NCC_updateRule(ncc, "function-definition",
+                   "${declaration-specifiers} ${} ${declarator} ${} ${declaration-list}|${ε} ${} ${compound-statement}", 0, False, True, False);
+
+    // Declaration list,
+    NCC_updateRule(ncc, "declaration-list",
+                   "${declaration} {"
+                   "   ${} ${declaration}"
+                   "}^*", 0, False, False, False);
+
+    // Test document,
     NCC_addRule(ncc, "testDocument",
             "${primary-expression}        | "
             "${postfix-expression}        | "
@@ -579,7 +680,8 @@ void defineLanguage(struct NCC* ncc) {
             "${assignment-expression}     | "
             "${expression}                | "
             "${constant-expression}       | "
-            "${declaration}", printListener, True, False, False);
+            "${declaration}               | "
+            "${translation-unit}", printListener, True, False, False);
 }
 
 static void test(struct NCC* ncc, const char* code) {
@@ -649,6 +751,33 @@ void NMain() {
     test(&ncc, "int NCC_getRuleVariable(struct NCC* ncc, int index, struct NCC_Variable* outVariable);");
 
     // TODO: Use the complex statements from your own project for testing...
+    #endif
+
+    #if TEST_STATEMENTS
+    test(&ncc, "\n"
+               "void main(void) {\n"
+               "    int a = 3 + 5;\n"
+               "}");
+
+    // A fake example that avoids the type-def issues,
+    test(&ncc, "\n"
+               "void variadicFunction(int firstArgument, ...) {\n"
+               "    struct va_list vaList;\n"
+               "    va_start(vaList, firstArgument);\n"
+               "    int* argument = va_arg(vaList, sizeof(int*));\n"
+               "    *argument = 123;\n"
+               "    va_end(vaList);\n"
+               "}\n"
+               "\n"
+               "void main(void) {\n"
+               "    int a;\n"
+               "    variadicFunction(567, &a);\n"
+               "}\n");
+
+    test(&ncc, "void main() {\n"
+               "   int a ,b, c;\n"
+               "   c = a ++ + ++ b;\n"
+               "}");
     #endif
 
     // Clean up,

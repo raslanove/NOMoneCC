@@ -711,7 +711,8 @@ static int32_t repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     if (followingSubRuleMatchLength>0) return followingSubRuleMatchLength;
 
     // TODO: if following subrule is the end of this sub-rule, we should check the next of the current sub-rule, which
-    // should be kept in a separate stack?
+    // should be kept in a separate stack? This should sometimes terminate the repeats earlier than expected. Should
+    // we do it at all? Maybe do it conditional, or using another operator (something other than the *) ?
 
     // Following sub-rule didn't match, attempt repeating (on the temporary route),
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
