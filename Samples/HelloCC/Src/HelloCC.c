@@ -3,7 +3,7 @@
 
 #include <NCC.h>
 
-void assert(struct NCC* ncc, const char*ruleName, NCC_onMatchListener onMatchListener, boolean rootRule, const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength) {
+void assert(struct NCC* ncc, const char*ruleName, NCC_onConfirmedMatchListener onMatchListener, boolean rootRule, const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength) {
 
     boolean nccNeedsDeletion = False;
     if (!ncc) {
@@ -12,7 +12,11 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_onMatchListener onMatchLis
     }
     if (!ruleName) ruleName = "";
 
-    if (!NCC_addRule(ncc, ruleName, rule, onMatchListener, rootRule, True, False)) {
+    struct NCC_RuleData ruleData;
+    NCC_initializeRuleData(&ruleData, ncc, ruleName, rule, 0, 0, onMatchListener, rootRule, True, False);
+    boolean success = NCC_addRule(&ruleData);
+    NCC_destroyRuleData(&ruleData);
+    if (!success) {
         NERROR("HelloCC", "Couldn't add rule. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT));
         return ;
     }
@@ -25,10 +29,10 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_onMatchListener onMatchLis
     NLOGI("", "");
 }
 
-void matchListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    NLOGI("HelloCC", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
+void matchListener(struct NCC_MatchingData* matchingData) {
+    NLOGI("HelloCC", "ruleName: %s, variablesCount: %d", NString.get(&matchingData->ruleData->ruleName), matchingData->variablesCount);
     struct NCC_Variable variable;
-    while (NCC_popRuleVariable(ncc, &variable)) {
+    while (NCC_popRuleVariable(matchingData->ruleData->ncc, &variable)) {
         NLOGI("HelloCC", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), variable.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
         NCC_destroyVariable(&variable);
     }
@@ -37,6 +41,8 @@ void matchListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesC
 void NMain() {
 
     NSystemUtils.logI("sdf", "besm Allah :)");
+
+    // A number of test-cases that make sure that rules and matching behave as expected.
 
     // x-y
     assert(0, 0, 0, True, "besm\\ Allah\\ a-z", "besm Allah x", True, 12);

@@ -83,6 +83,7 @@
 
 struct NCC_Variable;
 struct NByteVector;
+struct NCC_RuleData;
 
 struct NCC {
     void* extraData;
@@ -93,21 +94,59 @@ struct NCC {
     uint32_t ruleIndexSizeBytes;
 };
 
-// TODO: Should take a structure instead of multiple variables.
-// TODO: The structure should contain the matched text and matched length.
-// TODO: The structure should have output members, indicating a modified match length, and an indicator
-//       to whether parsing should proceed or terminate, and an indicator whether this should be pushed
-//       as a variable or not (then remove the pushes-or-not arguments).
-// TODO: should return True if this rule was accepted, False otherwise to look for other alternatives.
-// TODO: optimize add/update rule functions parameters.
-typedef void (*NCC_onMatchListener)(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
+// Returned from the unconfirmed match listener,
+struct NCC_MatchingResult {
+    int32_t matchLength;
+    boolean terminate;
+    boolean pushVariable;
+    boolean couldNeedRollBack;
+};
+
+// Sent to the listeners,
+struct NCC_MatchingData {
+    struct NCC_RuleData* ruleData;
+    char* matchedText;
+    int32_t matchLength;
+    int32_t variablesCount;
+
+    struct NCC_MatchingResult outResult; // Setting this is useful only inside the unconfirmed match listener.
+};
+
+typedef boolean (*NCC_onUnconfirmedMatchListener)(struct NCC_MatchingData* matchingData);
+typedef void    (*   NCC_onRollBackMatchListener)(struct NCC_MatchingData* matchingData);
+typedef void    (*  NCC_onConfirmedMatchListener)(struct NCC_MatchingData* matchingData);
+
+struct NCC_RuleData {
+    struct NCC* ncc;
+    struct NString ruleName;
+    struct NString ruleText;
+    NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener;
+    NCC_onRollBackMatchListener       onRollBackMatchListener;
+    NCC_onConfirmedMatchListener     onConfirmedMatchListener;
+    boolean rootRule;              // True: can be matched alone. False: must be part of some other rule.
+    boolean pushVariable;          // False: matches, but the value is ignored.
+    boolean popsChildrenVariables; // False: keeps the variables of nested rules.
+
+    struct NCC_RuleData* (*set)(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText);
+    struct NCC_RuleData* (*setListeners)(struct NCC_RuleData* ruleData, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener);
+    struct NCC_RuleData* (*setFlags)(struct NCC_RuleData* ruleData, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
+};
+
+// TODO: populate and return NCC_MatchingResult from matching functions...
+// TODO: NCC_onUnconfirmedMatchListener should return True if this rule was accepted, False otherwise to look for other alternatives.
+// TODO: replace child function pointers with look-up tables based on type_id...
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
-boolean NCC_addRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
-boolean NCC_updateRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
+
+struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
+void NCC_destroyRuleData(struct NCC_RuleData* ruleData);
+
+boolean NCC_addRule(struct NCC_RuleData* ruleData);
+boolean NCC_updateRule(struct NCC_RuleData* ruleData);
+
 int32_t NCC_match(struct NCC* ncc, const char* text); // Returns match length if matched, -1 if rejected.
 boolean NCC_popRuleVariable(struct NCC* ncc, struct NCC_Variable* outVariable); // Pops variables of the currently active rule.
 boolean NCC_getRuleVariable(struct NCC* ncc, uint32_t index, struct NCC_Variable* outVariable); // Gets variables of the currently active rule.

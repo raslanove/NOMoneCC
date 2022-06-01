@@ -80,29 +80,60 @@ void NCC_destroyVariable(struct NCC_Variable* variable) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct NCC_Rule {
-    struct NString name;
+    struct NCC_RuleData data;
     struct NCC_Node* tree;
     uint32_t index;
-    NCC_onMatchListener onMatchListener;
-    boolean rootRule; // True: can be matched alone. False: must be part of some other rule.
-    boolean pushVariable; // False: matches, but the value is ignored.
-    boolean popsChildrenVariables; // False: keeps the variables of nested rules.
 };
 
-static inline struct NCC_Rule* initializeRule(struct NCC_Rule* rule, const char* name, struct NCC_Node* ruleTree, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
-    NString.set(&rule->name, "%s", name);
-    rule->tree = ruleTree;
-    rule->onMatchListener = onMatchListener;
-    rule->rootRule = rootRule;
-    rule->pushVariable = pushVariable;
-    rule->popsChildrenVariables = popsChildrenVariables;
-    return rule;
+static struct NCC_RuleData* ruleDataSet(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText) {
+    NString.set(&ruleData->ruleName, "%s", ruleName);
+    NString.set(&ruleData->ruleText, "%s", ruleText);
+    return ruleData;
 }
 
-static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+static struct NCC_RuleData* ruleDataSetListeners(struct NCC_RuleData* ruleData, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener) {
+    ruleData->onUnconfirmedMatchListener = onUnconfirmedMatchListener;
+    ruleData->onRollBackMatchListener = onRollBackMatchListener;
+    ruleData->onConfirmedMatchListener = onConfirmedMatchListener;
+    return ruleData;
+}
+
+static struct NCC_RuleData* ruleDataSetFlags(struct NCC_RuleData* ruleData, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+    ruleData->rootRule = rootRule;
+    ruleData->pushVariable = pushVariable;
+    ruleData->popsChildrenVariables = popsChildrenVariables;
+    return ruleData;
+}
+
+struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+
+    ruleData->ncc = ncc;
+    NString.initialize(&ruleData->ruleName, "%s", ruleName);
+    NString.initialize(&ruleData->ruleText, "%s", ruleText);
+    ruleData->onUnconfirmedMatchListener = onUnconfirmedMatchListener;
+    ruleData->onRollBackMatchListener = onRollBackMatchListener;
+    ruleData->onConfirmedMatchListener = onConfirmedMatchListener;
+    ruleData->rootRule = rootRule;
+    ruleData->pushVariable = pushVariable;
+    ruleData->popsChildrenVariables = popsChildrenVariables;
+
+    ruleData->set = ruleDataSet;
+    ruleData->setFlags = ruleDataSetFlags;
+    ruleData->setListeners = ruleDataSetListeners;
+
+    return ruleData;
+}
+
+void NCC_destroyRuleData(struct NCC_RuleData* ruleData) {
+    NString.destroy(&ruleData->ruleName);
+    NString.destroy(&ruleData->ruleText);
+}
+
+static struct NCC_Rule* createRule(struct NCC_RuleData* ruleData) {
 
     // Create rule tree,
-    struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
+    const char* ruleText = NString.get(&ruleData->ruleText);
+    struct NCC_Node* ruleTree = constructRuleTree(ruleData->ncc, ruleText);
     if (!ruleTree) {
         NERROR("NCC", "createRule(): unable to construct rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return 0;
@@ -110,14 +141,18 @@ static struct NCC_Rule* createRule(struct NCC* ncc, const char* name, const char
 
     // Create and initialize rule,
     struct NCC_Rule* rule = NMALLOC(sizeof(struct NCC_Rule), "NCC.createRule() rule");
-    NString.initialize(&rule->name, "");
-    initializeRule(rule, name, ruleTree, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
+    rule->tree = ruleTree;
+    rule->data = *ruleData;  // Copy all members. But note that, copying strings is dangerous due
+                             // to memory allocations. They have to be handled manually.
+    const char* ruleName = NString.get(&ruleData->ruleName);
+    NString.initialize(&ruleData->ruleName, "%s", ruleName);
+    NString.initialize(&ruleData->ruleText, "%s", ruleText);
 
     return rule;
 }
 
 static void destroyRule(struct NCC_Rule* rule) {
-    NString.destroy(&rule->name);
+    NCC_destroyRuleData(&rule->data);
     rule->tree->deleteTree(rule->tree);
 }
 
@@ -909,7 +944,7 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     }
 
     // Check if pushing this node is useful,
-    if (nodeData->rule->pushVariable || nodeData->rule->onMatchListener || nodeData->rule->popsChildrenVariables) {
+    if (nodeData->rule->data.pushVariable || nodeData->rule->data.onConfirmedMatchListener || nodeData->rule->data.popsChildrenVariables) {
 
         // Push 0 to mark the end of the rule route,
         NByteVector.pushBack(ncc->matchRoute, 0);
@@ -945,13 +980,25 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
         NByteVector.popBack(ncc->matchRoute, &nextValue); // Discard the 0.
     }
 
+    char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
+    NSystemUtils.memcpy(matchedText, text, matchLength);
+    matchedText[matchLength] = 0;        // Terminate the string.
+
     // Perform rule action,
     ncc->currentCallStackBeginning = variablesStackPosition;
-    uint32_t newVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
-    if (rule->onMatchListener) rule->onMatchListener(ncc, &rule->name, newVariablesCount);
+    if (rule->data.onConfirmedMatchListener) {
+
+        struct NCC_MatchingData matchingData;
+        matchingData.ruleData = &rule->data;
+        matchingData.matchedText = matchedText;
+        matchingData.matchLength = matchLength;
+        matchingData.variablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
+
+        rule->data.onConfirmedMatchListener(&matchingData);
+    }
 
     // Pop any variables that were not popped,
-    if (rule->popsChildrenVariables) {
+    if (rule->data.popsChildrenVariables) {
         int32_t remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
         for (;remainingVariablesCount; remainingVariablesCount--) {
             // Possible performance improvement: Destroying variables in place without popping, then
@@ -964,28 +1011,18 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
 
     // Save the match,
     struct NCC_Variable match;
-    if (rule->pushVariable) {
-        char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
-        NSystemUtils.memcpy(matchedText, text, matchLength);
-        matchedText[matchLength] = 0;
-
-        NCC_initializeVariable(&match, NString.get(&rule->name), matchedText);
-        NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
+    if (rule->data.pushVariable) {
+        NCC_initializeVariable(&match, NString.get(&rule->data.ruleName), matchedText);
         NVector.pushBack(&ncc->variables, &match);
     }
 
-    // Follow next nodes,
     #ifdef NCC_VERBOSE
-        if (rule->pushVariable) {
-            NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), match.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&match.value), NTCOLOR(STREAM_DEFAULT));
-        } else {
-            char *matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeFollowMatchRoute() matchedText");
-            NSystemUtils.memcpy(matchedText, text, matchLength);
-            matchedText[matchLength] = 0;
-            NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&rule->name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchedText, NTCOLOR(STREAM_DEFAULT));
-            NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
-        }
+        NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchedText, NTCOLOR(STREAM_DEFAULT));
     #endif
+
+    NFREE(matchedText, "NCC.substituteNodeFollowMatchRoute() matchedText");
+
+    // Follow next nodes,
     return matchLength;
 }
 
@@ -1130,21 +1167,23 @@ void NCC_destroyAndFreeNCC(struct NCC* ncc) {
     NFREE(ncc, "NCC.NCC_destroyAndFreeNCC() ncc");
 }
 
-boolean NCC_addRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+boolean NCC_addRule(struct NCC_RuleData* ruleData) {
 
     // Check if a rule with this name already exists,
-    if (getRule(ncc, ruleName)) {
+    const char* ruleName = NString.get(&ruleData->ruleName);
+    if (getRule(ruleData->ncc, ruleName)) {
         NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s. A rule with the same name exists.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
-    struct NCC_Rule* rule = createRule(ncc, ruleName, ruleText, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
+    struct NCC_Rule* rule = createRule(ruleData);
     if (!rule) {
-        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&ruleData->ruleText), NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
     // Set the rule index and the rule index size,
+    struct NCC* ncc = ruleData->ncc;
     rule->index = NVector.size(&ncc->rules);
     if (rule->index < 256) {
         ncc->ruleIndexSizeBytes = 1;
@@ -1160,8 +1199,11 @@ boolean NCC_addRule(struct NCC* ncc, const char* ruleName, const char* ruleText,
     return True;
 }
 
-boolean NCC_updateRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onMatchListener onMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+boolean NCC_updateRule(struct NCC_RuleData* ruleData) {
 
+    // Fetch rule,
+    struct NCC* ncc = ruleData->ncc;
+    const char* ruleName = NString.get(&ruleData->ruleName);
     struct NCC_Rule* rule = getRule(ncc, ruleName);
     if (!rule) {
         NERROR("NCC", "NCC_updateRule(): unable to update rule %s%s%s. Rule doesn't exist.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
@@ -1169,6 +1211,7 @@ boolean NCC_updateRule(struct NCC* ncc, const char* ruleName, const char* ruleTe
     }
 
     // Create new rule tree,
+    const char* ruleText = NString.get(&ruleData->ruleText);
     struct NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
     if (!ruleTree) {
         NERROR("NCC", "NCC_updateRule(): unable to construct rule tree: %s%s%s. Failed to update rule: %s%s%s.", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
@@ -1178,8 +1221,15 @@ boolean NCC_updateRule(struct NCC* ncc, const char* ruleName, const char* ruleTe
     // Dispose of old rule-tree,
     rule->tree->deleteTree(rule->tree);
 
-    // Reinitialize rule,
-    initializeRule(rule, ruleName, ruleTree, onMatchListener, rootRule, pushVariable, popsChildrenVariables);
+    // Reinitialize rule data by copying all members. But note that copying strings is dangerous due
+    // to memory allocations. Strings have to be handled manually,
+    struct NString ruleNameString = rule->data.ruleName;
+    struct NString ruleTextString = rule->data.ruleText;
+    rule->data = *ruleData;
+    rule->data.ruleName = ruleNameString;
+    rule->data.ruleText = ruleTextString;
+    NString.set(&ruleData->ruleName, "%s", ruleName);
+    NString.set(&ruleData->ruleText, "%s", ruleText);
 
     return True;
 }
@@ -1188,7 +1238,7 @@ static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName) {
 
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
         struct NCC_Rule* currentRule = *((struct NCC_Rule**) NVector.get(&ncc->rules, i));
-        if (NCString.equals(ruleName, NString.get(&currentRule->name))) return currentRule;
+        if (NCString.equals(ruleName, NString.get(&currentRule->data.ruleName))) return currentRule;
     }
     return 0;
 }
@@ -1242,7 +1292,7 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
 
         struct NCC_Rule* rule = *((struct NCC_Rule**) NVector.get(&ncc->rules, i));
-        if (!rule->rootRule) continue;
+        if (!rule->data.rootRule) continue;
 
         // Reset routes,
         NByteVector.clear(ncc->matchRoute);
@@ -1281,7 +1331,22 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
 
     // Perform rule action,
     ncc->currentCallStackBeginning = 0;
-    if (maxMatchRule && maxMatchRule->onMatchListener) maxMatchRule->onMatchListener(ncc, &maxMatchRule->name, NVector.size(&ncc->variables));
+    if (maxMatchRule && maxMatchRule->data.onConfirmedMatchListener) {
+
+        char *matchedText = NMALLOC(maxMatchLength+1, "NCC.NCC_match() matchedText");
+        NSystemUtils.memcpy(matchedText, text, maxMatchLength);
+        matchedText[maxMatchLength] = 0;        // Terminate the string.
+
+        struct NCC_MatchingData matchingData;
+        matchingData.ruleData = &maxMatchRule->data;
+        matchingData.matchedText = matchedText;
+        matchingData.matchLength = maxMatchLength;
+        matchingData.variablesCount = NVector.size(&ncc->variables);
+
+        maxMatchRule->data.onConfirmedMatchListener(&matchingData);
+
+        NFREE(matchedText, "NCC.NCC_match() matchedText");
+    }
 
     // Empty the variables stack,
     for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) NCC_destroyVariable(NVector.get(&ncc->variables, i));
