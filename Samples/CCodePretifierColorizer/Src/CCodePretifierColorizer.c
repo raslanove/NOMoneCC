@@ -70,6 +70,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Common,
     NCC_addRule(ncc, "ε", "", 0, False, False, False);
+    // TODO: Why do we have a \\\\n term?!
     NCC_addRule(ncc, "white-space", "{\\ |\t|\r|\n|{\\\\\n}}^*", 0, False, False, False);
     NCC_addRule(ncc, "line-end", "\n|${ε}", 0, False, False, False);
     NCC_addRule(ncc, "line-comment", "// * ${line-end}|{\\\\${line-end}}", 0, False, False, False);

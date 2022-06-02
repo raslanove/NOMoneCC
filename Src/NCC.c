@@ -7,6 +7,10 @@
 #include <NCString.h>
 #include <NVector.h>
 
+#ifndef NCC_VERBOSE
+#define NCC_VERBOSE 0
+#endif
+
 //
 // Operation:
 //   First, we construct our rules. Then, given a string, we find the match route. The match route is
@@ -330,7 +334,7 @@ static struct NCC_Node* createLiteralsNode(const char* literals) {
 
     NString.initialize(&nodeData->literals, "%s", literals);
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
     NLOGI("NCC", "Created literals node: %s%s%s", NTCOLOR(HIGHLIGHT), literals, NTCOLOR(STREAM_DEFAULT));
     #endif
     return node;
@@ -392,7 +396,7 @@ static struct NCC_Node* createLiteralRangeNode(unsigned char rangeStart, unsigne
     nodeData->rangeStart = rangeStart;
     nodeData->rangeEnd = rangeEnd;
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
     NLOGI("NCC", "Created literal-range node: %s%c-%c%s", NTCOLOR(HIGHLIGHT), rangeStart, rangeEnd, NTCOLOR(STREAM_DEFAULT));
     #endif
     return node;
@@ -456,7 +460,7 @@ static struct NCC_Node* handleLiteral(struct NCC_Node* parentNode, const char** 
             struct LiteralsNodeData* nodeData = parentNode->data;
             NString.append(&nodeData->literals, "%c", literal);
 
-            #ifdef NCC_VERBOSE
+            #if NCC_VERBOSE
             NLOGI("NCC", "Appended to literals node: %s%c%s", NTCOLOR(HIGHLIGHT), literal, NTCOLOR(STREAM_DEFAULT));
             #endif
             return parentNode;
@@ -620,7 +624,7 @@ static struct NCC_Node* createOrNode(struct NCC* ncc, struct NCC_Node* parentNod
     }
     createAcceptNode(rhsNode);
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
     NLOGI("NCC", "Created or node: %s|%s%s", NTCOLOR(HIGHLIGHT), remainingSubRule, NTCOLOR(STREAM_DEFAULT));
     #endif
     return node;
@@ -721,7 +725,7 @@ static struct NCC_Node* createSubRuleNode(struct NCC* ncc, struct NCC_Node* pare
     node->deleteTree = subRuleNodeDeleteTree;
     nodeData->subRuleTree = subRuleTree;
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
     NLOGI("NCC", "Created sub-rule node: %s{%s}%s", NTCOLOR(HIGHLIGHT), subRule, NTCOLOR(STREAM_DEFAULT));
     #endif
     parentNode->setNextNode(parentNode, node);
@@ -837,7 +841,7 @@ static struct NCC_Node* createRepeatNode(struct NCC* ncc, struct NCC_Node* paren
     // The remainder of the tree was already added to the following sub-rule, no need to continue parsing,
     while (**in_out_rule) (*in_out_rule)++;
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
     NLOGI("NCC", "Created repeat node: %s^*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
     #endif
     return node;
@@ -909,7 +913,7 @@ static struct NCC_Node* createAnythingNode(struct NCC* ncc, struct NCC_Node* par
     // The remainder of the tree was already added to the following sub-rule, no need to continue parsing,
     while (**in_out_rule) (*in_out_rule)++;
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
     NLOGI("NCC", "Created anything node: %s*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
     #endif
     parentNode->setNextNode(parentNode, node);
@@ -924,8 +928,25 @@ struct SubstituteNodeData {
     struct NCC_Rule* rule;
 };
 
+static void popChildrenVariables(struct NCC* ncc, int32_t variablesStackStartPosition) {
+
+    int32_t remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackStartPosition;
+    for (;remainingVariablesCount; remainingVariablesCount--) {
+        // Possible performance improvement: Destroying variables in place without popping, then
+        // adjusting the vector size. Or even better, reusing variables.
+        struct NCC_Variable currentVariable;
+        NVector.popBack(&ncc->variables, &currentVariable);
+        NCC_destroyVariable(&currentVariable);
+    }
+}
+
 static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text) {
     struct SubstituteNodeData *nodeData = node->data;
+    char *matchedText = 0;
+    boolean needsRollBack = True;
+
+    // Remember the variables stack position,
+    uint32_t variablesStackPosition = NVector.size(&ncc->variables);
 
     // Match rule on a temporary route,
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
@@ -934,14 +955,65 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     switchRoutes(&ncc->matchRoute, &ncc->tempRoute1);
 
     // Return immediately if no match,
-    if (matchLength==-1) return -1;
+    if (matchLength==-1) goto fail;
+
+    // Found a match (an unconfirmed one, though). Report,
+    boolean pushVariable = nodeData->rule->data.pushVariable;    
+    if (nodeData->rule->data.onUnconfirmedMatchListener) {
+
+        matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeMatch() matchedText");
+        NSystemUtils.memcpy(matchedText, text, matchLength);
+        matchedText[matchLength] = 0;        // Terminate the string.
+
+        struct NCC_MatchingData matchingData;
+        matchingData.ruleData = &nodeData->rule->data;
+        matchingData.matchedText = matchedText;
+        matchingData.matchLength = matchLength;
+        matchingData.variablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
+
+        // Pre-initialize result with convenient values,
+        matchingData.outResult.terminate = False;
+        matchingData.outResult.matchLength = matchLength;
+        matchingData.outResult.pushVariable = pushVariable;
+        matchingData.outResult.couldNeedRollBack = False;
+
+        ncc->currentCallStackBeginning = variablesStackPosition;
+        boolean accepted = nodeData->rule->data.onUnconfirmedMatchListener(&matchingData);
+
+        // TODO: implement terminate...
+        // TODO: implement needs-rollback...
+
+        if (!accepted) goto fail;
+
+        // Accepted! Updated the match results accordingly,
+        matchLength = matchingData.outResult.matchLength;
+        pushVariable = matchingData.outResult.pushVariable;
+        needsRollBack = matchingData.outResult.couldNeedRollBack;
+    }
 
     // Match next nodes,
     int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
     if (nextNodeMatchLength==-1) {
         NByteVector.resize(ncc->tempRoute1, tempRouteMark);
-        return -1;
+
+        // TODO: enable ....
+        //if (needsRollBack) rollback tree;
+        goto fail;
     }
+
+    // Push this variable,
+    if (pushVariable) {
+        if (!matchedText) {
+            matchedText = NMALLOC(matchLength+1, "NCC.substituteNodeMatch() matchedText");
+            NSystemUtils.memcpy(matchedText, text, matchLength);
+            matchedText[matchLength] = 0;        // Terminate the string.
+        }
+        struct NCC_Variable match;
+        NCC_initializeVariable(&match, NString.get(&nodeData->rule->data.ruleName), matchedText);
+        NVector.pushBack(&ncc->variables, &match);
+    }
+
+    if (matchedText) NFREE(matchedText, "NCC.substituteNodeMatch() matchedText");
 
     // Check if pushing this node is useful,
     if (nodeData->rule->data.pushVariable || nodeData->rule->data.onConfirmedMatchListener || nodeData->rule->data.popsChildrenVariables) {
@@ -962,6 +1034,11 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     }
 
     return matchLength + nextNodeMatchLength;
+
+    fail:
+    if (matchedText) NFREE(matchedText, "NCC.substituteNodeMatch() matchedText");
+    popChildrenVariables(ncc, variablesStackPosition);
+    return -1;
 }
 
 static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC* ncc, const char* text) {
@@ -998,25 +1075,16 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
     }
 
     // Pop any variables that were not popped,
-    if (rule->data.popsChildrenVariables) {
-        int32_t remainingVariablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
-        for (;remainingVariablesCount; remainingVariablesCount--) {
-            // Possible performance improvement: Destroying variables in place without popping, then
-            // adjusting the vector size. Or even better, reusing variables.
-            struct NCC_Variable currentVariable;
-            NVector.popBack(&ncc->variables, &currentVariable);
-            NCC_destroyVariable(&currentVariable);
-        }
-    }
+    if (rule->data.popsChildrenVariables) popChildrenVariables(ncc, variablesStackPosition);
 
     // Save the match,
-    struct NCC_Variable match;
     if (rule->data.pushVariable) {
+        struct NCC_Variable match;
         NCC_initializeVariable(&match, NString.get(&rule->data.ruleName), matchedText);
         NVector.pushBack(&ncc->variables, &match);
     }
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
         NLOGI("NCC", "Visited substitute node %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchedText, NTCOLOR(STREAM_DEFAULT));
     #endif
 
@@ -1076,7 +1144,7 @@ static struct NCC_Node* createSubstituteNode(struct NCC* ncc, struct NCC_Node* p
     node->deleteTree = substituteNodeDeleteTree;
     nodeData->rule = rule;
 
-    #ifdef NCC_VERBOSE
+    #if NCC_VERBOSE
     NLOGI("NCC", "Created substitute node: %s${%s}%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
     #endif
 
@@ -1282,6 +1350,11 @@ static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tem
     NByteVector.resize(tempRoute, tempRouteMark);
 }
 
+static void emptyVariablesStack(struct NCC* ncc) {
+    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) NCC_destroyVariable(NVector.get(&ncc->variables, i));
+    NVector.clear(&ncc->variables);
+}
+
 int32_t NCC_match(struct NCC* ncc, const char* text) {
 
     // Find the longest match,
@@ -1313,6 +1386,11 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
                     ncc->matchRoute->objects,
                     NByteVector.size(ncc->matchRoute));
         }
+
+        // TODO: roll back the previously matched rule...
+
+        // Delete any remaining variables,
+        emptyVariablesStack(ncc);
     }
 
     if (maxMatchLength==-1) goto conclude;
@@ -1349,8 +1427,7 @@ int32_t NCC_match(struct NCC* ncc, const char* text) {
     }
 
     // Empty the variables stack,
-    for (int32_t i=NVector.size(&ncc->variables)-1; i>=0; i--) NCC_destroyVariable(NVector.get(&ncc->variables, i));
-    NVector.clear(&ncc->variables);
+    emptyVariablesStack(ncc);
 
     // Destroy the max match route,
     NByteVector.destroyAndFree(maxMatchRoute);

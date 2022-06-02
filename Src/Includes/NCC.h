@@ -96,10 +96,10 @@ struct NCC {
 
 // Returned from the unconfirmed match listener,
 struct NCC_MatchingResult {
-    int32_t matchLength;
-    boolean terminate;
-    boolean pushVariable;
-    boolean couldNeedRollBack;
+    int32_t matchLength;        // Can be used in the unconfirmed match listener only.
+    boolean terminate;          // Can be used in the confirmed/unconfirmed match listeners.
+    boolean pushVariable;       // Can be used in the confirmed/unconfirmed match listeners.
+    boolean couldNeedRollBack;  // Can be used in the unconfirmed match listener only.
 };
 
 // Sent to the listeners,
@@ -109,7 +109,7 @@ struct NCC_MatchingData {
     int32_t matchLength;
     int32_t variablesCount;
 
-    struct NCC_MatchingResult outResult; // Setting this is useful only inside the unconfirmed match listener.
+    struct NCC_MatchingResult outResult; // Setting overrides the default values.
 };
 
 typedef boolean (*NCC_onUnconfirmedMatchListener)(struct NCC_MatchingData* matchingData);

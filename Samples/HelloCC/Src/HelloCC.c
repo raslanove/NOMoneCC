@@ -1,7 +1,13 @@
 #include <NSystemUtils.h>
 #include <NError.h>
+#include <NVector.h>
+#include <NCString.h>
 
 #include <NCC.h>
+
+//////////////////////////////////////
+// Testing helper functions
+//////////////////////////////////////
 
 void assert(struct NCC* ncc, const char*ruleName, NCC_onConfirmedMatchListener onMatchListener, boolean rootRule, const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength) {
 
@@ -25,6 +31,9 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_onConfirmedMatchListener o
     if (shouldMatch && matchLength!=expectedMatchLength) NERROR("HelloCC", "assert(): Match failed. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
     if (!shouldMatch && matchLength!=-1) NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
 
+    // TODO: must match the entire text...
+    // TODO: check the faild matches match-length as well, don't just pass them as working...
+
     if (nccNeedsDeletion) NCC_destroyAndFreeNCC(ncc);
     NLOGI("", "");
 }
@@ -38,9 +47,61 @@ void matchListener(struct NCC_MatchingData* matchingData) {
     }
 }
 
+//////////////////////////////////////
+// Conditional acceptance test
+//////////////////////////////////////
+
+struct NVector declaredVariables;
+
+void addDeclaredVariable(const char* variableName) {
+    struct NString* declaredVariable = NVector.emplaceBack(&declaredVariables);
+    NString.initialize(declaredVariable, "%s", variableName);
+}
+
+boolean isVariableDeclared(const char* variableName) {
+    for (int32_t i=NVector.size(&declaredVariables)-1; i>-1; i--) {
+        const char* currentVariableName = NString.get(NVector.get(&declaredVariables, i));
+        if (NCString.equals(variableName, currentVariableName)) return True;
+    }
+    return False;
+}
+
+void destroyDeclaredVariables() {
+    for (int32_t i=NVector.size(&declaredVariables)-1; i>-1; i--) NString.destroy(NVector.get(&declaredVariables, i));
+    NVector.clear(&declaredVariables);
+}
+
+boolean declarationListener(struct NCC_MatchingData* matchingData) {
+
+    struct NCC_Variable variable; NCC_popRuleVariable(matchingData->ruleData->ncc, &variable);
+    addDeclaredVariable(NString.get(&variable.value));
+    NCC_destroyVariable(&variable);
+
+    return True;
+}
+
+boolean validateAssignmentListener(struct NCC_MatchingData* matchingData) {
+
+    // Accept rule only if the two variable were previously declared,
+    struct NCC_Variable variable; NCC_popRuleVariable(matchingData->ruleData->ncc, &variable);
+    boolean declared = isVariableDeclared(NString.get(&variable.value));
+    NCC_destroyVariable(&variable);
+    if (!declared) return False;
+
+    NCC_popRuleVariable(matchingData->ruleData->ncc, &variable);
+    declared = isVariableDeclared(NString.get(&variable.value));
+    NCC_destroyVariable(&variable);
+
+    return declared;
+}
+
+//////////////////////////////////////
+// Tests
+//////////////////////////////////////
+
 void NMain() {
 
-    NSystemUtils.logI("sdf", "besm Allah :)");
+    NSystemUtils.logI("sdf", "besm Allah :)\n");
 
     // A number of test-cases that make sure that rules and matching behave as expected.
 
@@ -103,7 +164,7 @@ void NMain() {
     NCC_destroyNCC(&ncc);
 
     NCC_initializeNCC(&ncc);
-    assert(&ncc, "Optional", matchListener, False, "{ab}^*{cd}^*", "", False, 0);
+    assert(&ncc, "Optional", matchListener, False, "{ab}^*{cd}^*", "", False, 0); // The result of this assert if False because this is not a root-rule. Otherwise, the empty string should match with a match-length of 0.
     assert(&ncc, "Mandatory", matchListener, True, "xyz", "xyz", True, 3);
     assert(&ncc, "ContainingOptional", matchListener, True, "${Optional}${Mandatory}", "xyz", True, 3);
     NCC_destroyNCC(&ncc);
@@ -120,5 +181,35 @@ void NMain() {
     assert(&ncc, "StringContainer", matchListener, True, "${String}", "\"besm Allah \\\" :)\"", True, 18);
     NCC_destroyNCC(&ncc);
 
+    // Stateful parsing,
+    struct NCC_RuleData ruleData;
+    NCC_initializeRuleData(&ruleData, &ncc, "", "", 0, 0, 0, False, False, False);
+    NVector.initialize(&declaredVariables, 0, sizeof(NString));
+
+    NCC_initializeNCC(&ncc);
+    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
+    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-z|_ {a-z|A-z|_|0-9}^*")->setFlags(&ruleData, False, True, False));
+    NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData,        declarationListener, 0, 0));
+    NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, validateAssignmentListener, 0, 0));
+    NCC_addRule(ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData,                          0, 0, 0));
+
+    assert(&ncc, "DocumentTest1", matchListener, True, "${} Test1: ${document}", "\n"
+            "Test1:\n"
+            "var1;\n"
+            "var2;\n"
+            "var1=var2;", True, 30);
+    destroyDeclaredVariables();
+
+    assert(&ncc, "DocumentTest2", matchListener, True, "${} Test2: ${document}", "\n"
+            "Test2:\n"
+            "var1;\n"
+            "var2;\n"
+            "var1=var3;", True, 20);
+    destroyDeclaredVariables();
+
+    NCC_destroyNCC(&ncc);
+    NVector.destroy(&declaredVariables);
+
+    NCC_destroyRuleData(&ruleData);
     NError.logAndTerminate();
 }
