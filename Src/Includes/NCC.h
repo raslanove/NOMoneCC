@@ -109,7 +109,7 @@ struct NCC_MatchingData {
     int32_t matchLength;
     int32_t variablesCount;
 
-    struct NCC_MatchingResult outResult; // Setting overrides the default values.
+    struct NCC_MatchingResult outResult; // Setting these overrides the default values.
 };
 
 typedef boolean (*NCC_onUnconfirmedMatchListener)(struct NCC_MatchingData* matchingData);

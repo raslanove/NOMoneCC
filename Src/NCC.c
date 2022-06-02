@@ -994,7 +994,6 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     // Match next nodes,
     int32_t nextNodeMatchLength = node->nextNode->match(node->nextNode, ncc, &text[matchLength]);
     if (nextNodeMatchLength==-1) {
-        NByteVector.resize(ncc->tempRoute1, tempRouteMark);
 
         // TODO: enable ....
         //if (needsRollBack) rollback tree;
@@ -1038,6 +1037,7 @@ static int32_t substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     fail:
     if (matchedText) NFREE(matchedText, "NCC.substituteNodeMatch() matchedText");
     popChildrenVariables(ncc, variablesStackPosition);
+    NByteVector.resize(ncc->tempRoute1, tempRouteMark);
     return -1;
 }
 
@@ -1063,6 +1063,7 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
 
     // Perform rule action,
     ncc->currentCallStackBeginning = variablesStackPosition;
+    boolean pushVariable = rule->data.pushVariable;
     if (rule->data.onConfirmedMatchListener) {
 
         struct NCC_MatchingData matchingData;
@@ -1071,14 +1072,21 @@ static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, struct NCC*
         matchingData.matchLength = matchLength;
         matchingData.variablesCount = NVector.size(&ncc->variables) - variablesStackPosition;
 
+        // Pre-initialize result with convenient values,
+        matchingData.outResult.terminate = False;
+        matchingData.outResult.pushVariable = pushVariable;
+
         rule->data.onConfirmedMatchListener(&matchingData);
+
+        // TODO: handle terminate...
+        pushVariable = matchingData.outResult.pushVariable;
     }
 
     // Pop any variables that were not popped,
     if (rule->data.popsChildrenVariables) popChildrenVariables(ncc, variablesStackPosition);
 
     // Save the match,
-    if (rule->data.pushVariable) {
+    if (pushVariable) {
         struct NCC_Variable match;
         NCC_initializeVariable(&match, NString.get(&rule->data.ruleName), matchedText);
         NVector.pushBack(&ncc->variables, &match);
@@ -1286,8 +1294,9 @@ boolean NCC_updateRule(struct NCC_RuleData* ruleData) {
         return False;
     }
 
-    // Dispose of old rule-tree,
+    // Dispose of the old rule-tree and set the new one,
     rule->tree->deleteTree(rule->tree);
+    rule->tree = ruleTree;
 
     // Reinitialize rule data by copying all members. But note that copying strings is dangerous due
     // to memory allocations. Strings have to be handled manually,
@@ -1296,8 +1305,8 @@ boolean NCC_updateRule(struct NCC_RuleData* ruleData) {
     rule->data = *ruleData;
     rule->data.ruleName = ruleNameString;
     rule->data.ruleText = ruleTextString;
-    NString.set(&ruleData->ruleName, "%s", ruleName);
-    NString.set(&ruleData->ruleText, "%s", ruleText);
+    NString.set(&rule->data.ruleName, "%s", ruleName);
+    NString.set(&rule->data.ruleText, "%s", ruleText);
 
     return True;
 }

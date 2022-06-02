@@ -7,48 +7,55 @@
 
 static void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
 
+static void addRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onConfirmedMatchListener matchListener, boolean rootRule, boolean pushVariable) {
+    struct NCC_RuleData ruleData;
+    NCC_initializeRuleData(&ruleData, ncc, ruleName, ruleText, 0, 0, matchListener, rootRule, pushVariable, True);
+    NCC_addRule(&ruleData);
+    NCC_destroyRuleData(&ruleData);
+}
+
 static void specifyLanguage(struct NCC* ncc) {
 
     // Elements,
-    NCC_addRule(ncc, "Empty", "", 0, False, True);
-    NCC_addRule(ncc, "WhiteSpace", "{\\ |\t|\r|\n}^*", 0, False, True);
-    NCC_addRule(ncc, "NotWhiteSpaceLiteral", "\x01-\x08 | \x0b-\x0c | \x0e-\x1f | \x21-\xff", 0, False, True);
-    NCC_addRule(ncc, "LineEnd", "\n|${Empty}", 0, False, True);
-    NCC_addRule(ncc, "LineComment", "//*${LineEnd}", 0, False, True);
-    NCC_addRule(ncc, "Integer", "0-9 | 1-9 0-9^*", 0, False, True);
-    NCC_addRule(ncc, "Identifier", "${NotWhiteSpaceLiteral}^*", 0, False, True);
-    NCC_addRule(ncc, "Label", "label ${WhiteSpace} ${Identifier}", labelListener, False, True);
-    NCC_addRule(ncc, "StackModifier", "${NotWhiteSpaceLiteral}^*", 0, False, True);
+    addRule(ncc, "Empty", "", 0, False, True);
+    addRule(ncc, "WhiteSpace", "{\\ |\t|\r|\n}^*", 0, False, True);
+    addRule(ncc, "NotWhiteSpaceLiteral", "\x01-\x08 | \x0b-\x0c | \x0e-\x1f | \x21-\xff", 0, False, True);
+    addRule(ncc, "LineEnd", "\n|${Empty}", 0, False, True);
+    addRule(ncc, "LineComment", "//*${LineEnd}", 0, False, True);
+    addRule(ncc, "Integer", "0-9 | 1-9 0-9^*", 0, False, True);
+    addRule(ncc, "Identifier", "${NotWhiteSpaceLiteral}^*", 0, False, True);
+    addRule(ncc, "Label", "label ${WhiteSpace} ${Identifier}", labelListener, False, True);
+    addRule(ncc, "StackModifier", "${NotWhiteSpaceLiteral}^*", 0, False, True);
 
     // Instructions,
-    NCC_addRule(ncc, "Push", "push ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}", pushListener, False, True);
-    NCC_addRule(ncc, "Pop" , "pop  ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}",  popListener, False, True);
-    NCC_addRule(ncc, "Add", "add", addListener, False, True);
-    NCC_addRule(ncc, "Sub", "sub", subListener, False, True);
-    NCC_addRule(ncc, "And", "and", andListener, False, True);
-    NCC_addRule(ncc, "Or" , "or" ,  orListener, False, True);
-    NCC_addRule(ncc, "Eq" , "eq" ,  eqListener, False, True);
-    NCC_addRule(ncc, "LT" , "lt" ,  ltListener, False, True);
-    NCC_addRule(ncc, "GT" , "gt" ,  gtListener, False, True);
-    NCC_addRule(ncc, "Neg", "neg", negListener, False, True);
-    NCC_addRule(ncc, "Not", "not", notListener, False, True);
-    NCC_addRule(ncc, "Jmp", "goto ${WhiteSpace} ${Identifier}", jumpListener, False, True);
-    NCC_addRule(ncc, "JNZ", "if\\-goto ${WhiteSpace} ${Identifier}", jumpNotZeroListener, False, True);
-    NCC_addRule(ncc, "Function", "function ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", functionListener, False, True);
-    NCC_addRule(ncc, "Return", "return", returnListener, False, True);
-    NCC_addRule(ncc, "Call", "call ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", callListener, False, True);
+    addRule(ncc, "Push", "push ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}", pushListener, False, True);
+    addRule(ncc, "Pop" , "pop  ${WhiteSpace} ${StackModifier} ${WhiteSpace} ${Integer}",  popListener, False, True);
+    addRule(ncc, "Add", "add", addListener, False, True);
+    addRule(ncc, "Sub", "sub", subListener, False, True);
+    addRule(ncc, "And", "and", andListener, False, True);
+    addRule(ncc, "Or" , "or" ,  orListener, False, True);
+    addRule(ncc, "Eq" , "eq" ,  eqListener, False, True);
+    addRule(ncc, "LT" , "lt" ,  ltListener, False, True);
+    addRule(ncc, "GT" , "gt" ,  gtListener, False, True);
+    addRule(ncc, "Neg", "neg", negListener, False, True);
+    addRule(ncc, "Not", "not", notListener, False, True);
+    addRule(ncc, "Jmp", "goto ${WhiteSpace} ${Identifier}", jumpListener, False, True);
+    addRule(ncc, "JNZ", "if\\-goto ${WhiteSpace} ${Identifier}", jumpNotZeroListener, False, True);
+    addRule(ncc, "Function", "function ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", functionListener, False, True);
+    addRule(ncc, "Return", "return", returnListener, False, True);
+    addRule(ncc, "Call", "call ${WhiteSpace} ${Identifier} ${WhiteSpace} ${Integer}", callListener, False, True);
 
-    NCC_addRule(ncc, "Instruction", "${Push} | ${Pop} | ${Add} | ${Sub} | ${And} | ${Or} | ${Eq} | ${LT} | ${GT} | ${Neg} | ${Not} | ${Jmp} | ${JNZ} | ${Function} | ${Return} | ${Call}", 0, False, True);
+    addRule(ncc, "Instruction", "${Push} | ${Pop} | ${Add} | ${Sub} | ${And} | ${Or} | ${Eq} | ${LT} | ${GT} | ${Neg} | ${Not} | ${Jmp} | ${JNZ} | ${Function} | ${Return} | ${Call}", 0, False, True);
 
     // Document,
-    NCC_addRule(ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Label} | ${Instruction}}^*", 0, True, True);
+    addRule(ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Label} | ${Instruction}}^*", 0, True, True);
 }
 
 static void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
     NLOGI("VMTranslate", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
     struct NCC_Variable variable;
-    while (NCC_popVariable(ncc, &variable)) {
-        NLOGI("VMTranslate", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&variable.name), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
+    while (NCC_popRuleVariable(ncc, &variable)) {
+        NLOGI("VMTranslate", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), variable.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
         NCC_destroyVariable(&variable);
     }
     NLOGI("", "");

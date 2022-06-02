@@ -12,6 +12,7 @@ struct OutputData {
 };
 
 struct NCC;
+struct NCC_MatchingData;
 
 typedef enum {
     VARIABLES=1u,
@@ -23,20 +24,20 @@ typedef enum {
 void               emitCode(struct NCC* ncc, const char* format, ...);
 void emitInitializationCode(struct NCC* ncc, InitializationFlags flags);
 void    emitTerminationCode(struct NCC* ncc);
-void          labelListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void           pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void            popListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void            addListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void            subListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void            andListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void             orListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void             eqListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void             ltListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void             gtListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void            negListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void            notListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void           jumpListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void    jumpNotZeroListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void       functionListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void         returnListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
-void           callListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
+void          labelListener(struct NCC_MatchingData* matchingData);
+void           pushListener(struct NCC_MatchingData* matchingData);
+void            popListener(struct NCC_MatchingData* matchingData);
+void            addListener(struct NCC_MatchingData* matchingData);
+void            subListener(struct NCC_MatchingData* matchingData);
+void            andListener(struct NCC_MatchingData* matchingData);
+void             orListener(struct NCC_MatchingData* matchingData);
+void             eqListener(struct NCC_MatchingData* matchingData);
+void             ltListener(struct NCC_MatchingData* matchingData);
+void             gtListener(struct NCC_MatchingData* matchingData);
+void            negListener(struct NCC_MatchingData* matchingData);
+void            notListener(struct NCC_MatchingData* matchingData);
+void           jumpListener(struct NCC_MatchingData* matchingData);
+void    jumpNotZeroListener(struct NCC_MatchingData* matchingData);
+void       functionListener(struct NCC_MatchingData* matchingData);
+void         returnListener(struct NCC_MatchingData* matchingData);
+void           callListener(struct NCC_MatchingData* matchingData);

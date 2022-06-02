@@ -276,7 +276,8 @@ static void emitPopCode(struct NCC* ncc, const char* modifier, const char* offse
     }
 }
 
-void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void pushListener(struct NCC_MatchingData* matchingData) {
+    struct NCC* ncc = matchingData->ruleData->ncc;
 
     // Example:
     //   push constant 7
@@ -288,13 +289,13 @@ void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
     //   Whitespace.
 
     // Offset or value,
-    struct NCC_Variable offsetOrValueVariable; NCC_popVariable(ncc, &offsetOrValueVariable);
+    struct NCC_Variable offsetOrValueVariable; NCC_popRuleVariable(ncc, &offsetOrValueVariable);
 
     // Whitespace,
-    struct NCC_Variable whiteSpaceVariable; NCC_popVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
+    struct NCC_Variable whiteSpaceVariable; NCC_popRuleVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
 
     // Modifier,
-    struct NCC_Variable modifierVariable; NCC_popVariable(ncc, &modifierVariable);
+    struct NCC_Variable modifierVariable; NCC_popRuleVariable(ncc, &modifierVariable);
 
     // Emit code,
     emitPushCode(ncc, NString.get(&modifierVariable.value), NString.get(&offsetOrValueVariable.value));
@@ -304,7 +305,8 @@ void pushListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
     NCC_destroyVariable(&modifierVariable);
 }
 
-void popListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void popListener(struct NCC_MatchingData* matchingData) {
+    struct NCC* ncc = matchingData->ruleData->ncc;
 
     // Example:
     //   pop local 7
@@ -316,13 +318,13 @@ void popListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCou
     //   Whitespace.
 
     // Offset,
-    struct NCC_Variable offsetVariable; NCC_popVariable(ncc, &offsetVariable);
+    struct NCC_Variable offsetVariable; NCC_popRuleVariable(ncc, &offsetVariable);
 
     // Whitespace,
-    struct NCC_Variable whiteSpaceVariable; NCC_popVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
+    struct NCC_Variable whiteSpaceVariable; NCC_popRuleVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
 
     // Modifier,
-    struct NCC_Variable modifierVariable; NCC_popVariable(ncc, &modifierVariable);
+    struct NCC_Variable modifierVariable; NCC_popRuleVariable(ncc, &modifierVariable);
 
     // Emit code,
     emitPopCode(ncc, NString.get(&modifierVariable.value), NString.get(&offsetVariable.value));
@@ -336,7 +338,7 @@ void popListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCou
 // 1-operand arithmetic
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void negListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void negListener(struct NCC_MatchingData* matchingData) {
 
     // Example:
     //   neg
@@ -352,10 +354,10 @@ void negListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCou
     //   M=D-M
     //   @SP
     //   M=M+1
-    emitCode(ncc, "// neg\nD=0\n@SP\nM=M-1\nA=M\nM=D-M\n@SP\nM=M+1\n\n");
+    emitCode(matchingData->ruleData->ncc, "// neg\nD=0\n@SP\nM=M-1\nA=M\nM=D-M\n@SP\nM=M+1\n\n");
 }
 
-void notListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void notListener(struct NCC_MatchingData* matchingData) {
 
     // Example:
     //   not
@@ -370,7 +372,7 @@ void notListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCou
     //   M=!M
     //   @SP
     //   M=M+1
-    emitCode(ncc, "// not\n@SP\nM=M-1\nA=M\nM=!M\n@SP\nM=M+1\n\n");
+    emitCode(matchingData->ruleData->ncc, "// not\n@SP\nM=M-1\nA=M\nM=!M\n@SP\nM=M+1\n\n");
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -400,20 +402,20 @@ inline static void emit2OperandArithmeticCode(struct NCC* ncc, const char* instr
     emitCode(ncc, "// %s\n@SP\nM=M-1\nA=M\nD=M\n@SP\nM=M-1\nA=M\nM=M%cD\n@SP\nM=M+1\n\n", instruction, operator);
 }
 
-void addListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    emit2OperandArithmeticCode(ncc, "add", '+');
+void addListener(struct NCC_MatchingData* matchingData) {
+    emit2OperandArithmeticCode(matchingData->ruleData->ncc, "add", '+');
 }
 
-void subListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    emit2OperandArithmeticCode(ncc, "sub", '-');
+void subListener(struct NCC_MatchingData* matchingData) {
+    emit2OperandArithmeticCode(matchingData->ruleData->ncc, "sub", '-');
 }
 
-void andListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    emit2OperandArithmeticCode(ncc, "and", '&');
+void andListener(struct NCC_MatchingData* matchingData) {
+    emit2OperandArithmeticCode(matchingData->ruleData->ncc, "and", '&');
 }
 
-void  orListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    emit2OperandArithmeticCode(ncc, "or", '|');
+void  orListener(struct NCC_MatchingData* matchingData) {
+    emit2OperandArithmeticCode(matchingData->ruleData->ncc, "or", '|');
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -466,16 +468,16 @@ inline static void emitComparisonCode(struct NCC* ncc, const char* instruction, 
     emitCode(ncc, "// %s\n@SP\nM=M-1\nA=M\nD=M\n@SP\nM=M-1\nA=M\nD=D-M\n@NLabel%d\nD;%s\n@SP\nA=M\nM=0\n@NLabel%d\n0;JMP\n(NLabel%d)\n@SP\nA=M\nM=-1\n(NLabel%d)\n@SP\nM=M+1\n\n", instruction, labelIndex1, jump, labelIndex2, labelIndex1, labelIndex2);
 }
 
-void  eqListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    emitComparisonCode(ncc, "eq", "JEQ");
+void  eqListener(struct NCC_MatchingData* matchingData) {
+    emitComparisonCode(matchingData->ruleData->ncc, "eq", "JEQ");
 }
 
-void  ltListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    emitComparisonCode(ncc, "lt", "JGT");
+void  ltListener(struct NCC_MatchingData* matchingData) {
+    emitComparisonCode(matchingData->ruleData->ncc, "lt", "JGT");
 }
 
-void  gtListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    emitComparisonCode(ncc, "gt", "JLT");
+void  gtListener(struct NCC_MatchingData* matchingData) {
+    emitComparisonCode(matchingData->ruleData->ncc, "gt", "JLT");
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -489,7 +491,8 @@ static void emitLabelCode(struct NCC* ncc, const char* labelName) {
     emitCode(ncc, "// label %s\n(%s)\n\n", labelName, labelName);
 }
 
-void labelListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void labelListener(struct NCC_MatchingData* matchingData) {
+    struct NCC* ncc = matchingData->ruleData->ncc;
 
     // Example:
     //   label LabelName
@@ -500,12 +503,13 @@ void labelListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesC
 
     // Label name,
     struct NCC_Variable labelNameVariable;
-    NCC_popVariable(ncc, &labelNameVariable);
+    NCC_popRuleVariable(ncc, &labelNameVariable);
     emitLabelCode(ncc, NString.get(&labelNameVariable.value));
     NCC_destroyVariable(&labelNameVariable);
 }
 
-void jumpListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void jumpListener(struct NCC_MatchingData* matchingData) {
+    struct NCC* ncc = matchingData->ruleData->ncc;
 
     // Example:
     //   goto LabelName
@@ -516,7 +520,7 @@ void jumpListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
 
     // Label name,
     struct NCC_Variable labelNameVariable;
-    NCC_popVariable(ncc, &labelNameVariable);
+    NCC_popRuleVariable(ncc, &labelNameVariable);
     const char* labelNameString = NString.get(&labelNameVariable.value);
 
     // Code:
@@ -528,7 +532,8 @@ void jumpListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
     NCC_destroyVariable(&labelNameVariable);
 }
 
-void jumpNotZeroListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void jumpNotZeroListener(struct NCC_MatchingData* matchingData) {
+    struct NCC* ncc = matchingData->ruleData->ncc;
 
     // Example:
     //   if-goto LabelName
@@ -539,7 +544,7 @@ void jumpNotZeroListener(struct NCC* ncc, struct NString* ruleName, int32_t vari
 
     // Label name,
     struct NCC_Variable labelNameVariable;
-    NCC_popVariable(ncc, &labelNameVariable);
+    NCC_popRuleVariable(ncc, &labelNameVariable);
     const char* labelNameString = NString.get(&labelNameVariable.value);
 
     // Code:
@@ -556,7 +561,8 @@ void jumpNotZeroListener(struct NCC* ncc, struct NString* ruleName, int32_t vari
     NCC_destroyVariable(&labelNameVariable);
 }
 
-void functionListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void functionListener(struct NCC_MatchingData* matchingData) {
+    struct NCC* ncc = matchingData->ruleData->ncc;
 
     // Example:
     //   function FunctionName 2
@@ -568,15 +574,15 @@ void functionListener(struct NCC* ncc, struct NString* ruleName, int32_t variabl
     //   Whitespace.
 
     // Local variables count,
-    struct NCC_Variable localVariablesCountVariable; NCC_popVariable(ncc, &localVariablesCountVariable);
+    struct NCC_Variable localVariablesCountVariable; NCC_popRuleVariable(ncc, &localVariablesCountVariable);
     const char* localVariablesCountString = NString.get(&localVariablesCountVariable.value);
     int32_t localVariablesCount = NCString.parseInteger(localVariablesCountString);
 
     // Whitespace,
-    struct NCC_Variable whiteSpaceVariable; NCC_popVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
+    struct NCC_Variable whiteSpaceVariable; NCC_popRuleVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
 
     // Function name,
-    struct NCC_Variable functionNameVariable; NCC_popVariable(ncc, &functionNameVariable);
+    struct NCC_Variable functionNameVariable; NCC_popRuleVariable(ncc, &functionNameVariable);
     const char* functionNameString = NString.get(&functionNameVariable.value);
 
     // Start comment,
@@ -596,7 +602,7 @@ void functionListener(struct NCC* ncc, struct NString* ruleName, int32_t variabl
     NCC_destroyVariable(&localVariablesCountVariable);
 }
 
-void returnListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void returnListener(struct NCC_MatchingData* matchingData) {
 
     // Example:
     //   return
@@ -688,7 +694,7 @@ void returnListener(struct NCC* ncc, struct NString* ruleName, int32_t variables
     //
     //   // return (end)
 
-    emitCode(ncc, "// return (start)\n\n// [SP] = [LCL-5]  (copy the return address)\n@5\nD=A\n@LCL\nA=M-D\nD=M\n@SP\nA=M\nM=D\n\n// [SP+1] = ARG+1  (copy ARG+1)\n@ARG\nD=M+1\n@SP\nA=M+1\nM=D\n\n// [ARG] = [SP-1]  (set the return value)\n@SP\nA=M-1\nD=M\n@ARG\nA=M\nM=D\n\n// THAT = [LCL-1]\n@LCL\nA=M-1\nD=M\n@THAT\nM=D\n\n// THIS = [LCL-2]\n@2\nD=A\n@LCL\nA=M-D\nD=M\n@THIS\nM=D\n\n// ARG = [LCL-3]\n@3\nD=A\n@LCL\nA=M-D\nD=M\n@ARG\nM=D\n\n// LCL = [LCL-4]\n@4\nD=A\n@LCL\nA=M-D\nD=M\n@LCL\nM=D\n\n// [[SP+1]] = [SP]  (copy return address into old LCL+1)\n@SP\nA=M\nD=M\n@SP\nA=M+1\nA=M\nM=D\n\n// SP = [SP+1]  (set SP to old LCL+1)\n@SP\nA=M+1\nD=M\n@SP\nM=D\n\n// Jmp to [SP]\nA=M\nA=M\n0;JMP\n\n// return (end)\n\n");
+    emitCode(matchingData->ruleData->ncc, "// return (start)\n\n// [SP] = [LCL-5]  (copy the return address)\n@5\nD=A\n@LCL\nA=M-D\nD=M\n@SP\nA=M\nM=D\n\n// [SP+1] = ARG+1  (copy ARG+1)\n@ARG\nD=M+1\n@SP\nA=M+1\nM=D\n\n// [ARG] = [SP-1]  (set the return value)\n@SP\nA=M-1\nD=M\n@ARG\nA=M\nM=D\n\n// THAT = [LCL-1]\n@LCL\nA=M-1\nD=M\n@THAT\nM=D\n\n// THIS = [LCL-2]\n@2\nD=A\n@LCL\nA=M-D\nD=M\n@THIS\nM=D\n\n// ARG = [LCL-3]\n@3\nD=A\n@LCL\nA=M-D\nD=M\n@ARG\nM=D\n\n// LCL = [LCL-4]\n@4\nD=A\n@LCL\nA=M-D\nD=M\n@LCL\nM=D\n\n// [[SP+1]] = [SP]  (copy return address into old LCL+1)\n@SP\nA=M\nD=M\n@SP\nA=M+1\nA=M\nM=D\n\n// SP = [SP+1]  (set SP to old LCL+1)\n@SP\nA=M+1\nD=M\n@SP\nM=D\n\n// Jmp to [SP]\nA=M\nA=M\n0;JMP\n\n// return (end)\n\n");
 }
 
 static void emitCallCode(struct NCC* ncc, const char* functionName, int32_t argumentsCount) {
@@ -766,7 +772,8 @@ static void emitCallCode(struct NCC* ncc, const char* functionName, int32_t argu
              functionName, argumentsCount, returnLabelIndex, 5+argumentsCount, functionName, functionName, returnLabelIndex, functionName, argumentsCount);
 }
 
-void callListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
+void callListener(struct NCC_MatchingData* matchingData) {
+    struct NCC* ncc = matchingData->ruleData->ncc;
 
     // Example:
     //   call FunctionName 2
@@ -778,14 +785,14 @@ void callListener(struct NCC* ncc, struct NString* ruleName, int32_t variablesCo
     //   Whitespace.
 
     // Local variables count,
-    struct NCC_Variable argumentsCountVariable; NCC_popVariable(ncc, &argumentsCountVariable);
+    struct NCC_Variable argumentsCountVariable; NCC_popRuleVariable(ncc, &argumentsCountVariable);
     int32_t argumentsCount = NCString.parseInteger(NString.get(&argumentsCountVariable.value));
 
     // Whitespace,
-    struct NCC_Variable whiteSpaceVariable; NCC_popVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
+    struct NCC_Variable whiteSpaceVariable; NCC_popRuleVariable(ncc, &whiteSpaceVariable); NCC_destroyVariable(&whiteSpaceVariable);
 
     // Function name,
-    struct NCC_Variable functionNameVariable; NCC_popVariable(ncc, &functionNameVariable);
+    struct NCC_Variable functionNameVariable; NCC_popRuleVariable(ncc, &functionNameVariable);
     const char* functionNameString = NString.get(&functionNameVariable.value);
 
     // Generate code,
