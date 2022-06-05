@@ -134,7 +134,6 @@ struct NCC_RuleData {
 
 // TODO: populate and return NCC_MatchingResult from matching functions...
 // TODO: NCC_onUnconfirmedMatchListener should return True if this rule was accepted, False otherwise to look for other alternatives.
-// TODO: replace child function pointers with look-up tables based on type_id...
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();
