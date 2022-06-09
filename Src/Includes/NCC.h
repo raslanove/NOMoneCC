@@ -99,7 +99,7 @@ struct NCC_MatchingResult {
     int32_t matchLength;        // Can be used in the unconfirmed match listener only.
     boolean terminate;          // Can be used in the confirmed/unconfirmed match listeners.
     boolean pushVariable;       // Can be used in the confirmed/unconfirmed match listeners.
-    boolean couldNeedRollBack;  // Can be used in the unconfirmed match listener only.
+    boolean couldNeedRollBack;  // Can be used in the unconfirmed match listener only. Set it if needed, otherwise, leave it unchanged.
 };
 
 // Sent to the listeners,
@@ -133,7 +133,8 @@ struct NCC_RuleData {
 };
 
 // TODO: populate and return NCC_MatchingResult from matching functions...
-// TODO: NCC_onUnconfirmedMatchListener should return True if this rule was accepted, False otherwise to look for other alternatives.
+// TODO: implement roll-back...
+// TODO: return match length even if match failed...
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();

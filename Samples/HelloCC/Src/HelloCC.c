@@ -105,6 +105,9 @@ void NMain() {
 
     // A number of test-cases that make sure that rules and matching behave as expected.
 
+    // Literals,
+    assert(0, 0, 0, True, "besm\\ Allah", "besm Allah", True, 10);
+
     // x-y
     assert(0, 0, 0, True, "besm\\ Allah\\ a-z", "besm Allah x", True, 12);
     assert(0, 0, 0, True, "besm\\ Allah\\ a-z", "besm Allah 2", False, 0);
@@ -182,11 +185,15 @@ void NMain() {
     NCC_destroyNCC(&ncc);
 
     // Stateful parsing,
+    NLOGI("", "%s================%s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
+    NLOGI("", "%sStateful Parsing%s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
+    NLOGI("", "%s================%s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
+
     struct NCC_RuleData ruleData;
     NCC_initializeRuleData(&ruleData, &ncc, "", "", 0, 0, 0, False, False, False);
     NVector.initialize(&declaredVariables, 0, sizeof(NString));
-
     NCC_initializeNCC(&ncc);
+
     NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
     NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-z|_ {a-z|A-z|_|0-9}^*")->setFlags(&ruleData, False, True, False));
     NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData,        declarationListener, 0, 0));
@@ -200,6 +207,7 @@ void NMain() {
             "var1=var2;", True, 30);
     destroyDeclaredVariables();
 
+    /*
     assert(&ncc, "DocumentTest2", matchListener, True, "${} Test2: ${document}", "\n"
             "Test2:\n"
             "var1;\n"
@@ -207,9 +215,11 @@ void NMain() {
             "var1=var3;", True, 20);
     destroyDeclaredVariables();
 
+    */
+
     NCC_destroyNCC(&ncc);
     NVector.destroy(&declaredVariables);
-
     NCC_destroyRuleData(&ruleData);
+
     NError.logAndTerminate();
 }
