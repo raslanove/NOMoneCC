@@ -24,15 +24,19 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_onConfirmedMatchListener o
     NCC_destroyRuleData(&ruleData);
     if (!success) {
         NERROR("HelloCC", "Couldn't add rule. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT));
+        if (nccNeedsDeletion) NCC_destroyAndFreeNCC(ncc);
         return ;
     }
 
-    int32_t matchLength = NCC_match(ncc, text);
-    if (shouldMatch && matchLength!=expectedMatchLength) NERROR("HelloCC", "assert(): Match failed. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
-    if (!shouldMatch && matchLength!=-1) NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchLength, NTCOLOR(STREAM_DEFAULT));
-
-    // TODO: must match the entire text...
-    // TODO: check the faild matches match-length as well, don't just pass them as working...
+    struct NCC_MatchingResult matchingResult;
+    boolean matched = NCC_match(ncc, text, &matchingResult);
+    if (shouldMatch && !matched) {
+        NERROR("HelloCC", "assert(): Match failed. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT));
+    } else if (!shouldMatch && matched) {
+        NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT));
+    } else if (expectedMatchLength != matchingResult.matchLength) {
+        NERROR("HelloCC", "assert(): Wrong match length. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s, Expected match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), expectedMatchLength, NTCOLOR(STREAM_DEFAULT));
+    }
 
     if (nccNeedsDeletion) NCC_destroyAndFreeNCC(ncc);
     NLOGI("", "");
@@ -110,23 +114,23 @@ void NMain() {
 
     // x-y
     assert(0, 0, 0, True, "besm\\ Allah\\ a-z", "besm Allah x", True, 12);
-    assert(0, 0, 0, True, "besm\\ Allah\\ a-z", "besm Allah 2", False, 0);
+    assert(0, 0, 0, True, "besm\\ Allah\\ a-z", "besm Allah 2", False, 11);
     assert(0, 0, 0, True, "besm\\ Allah\\ \\a-\\z", "besm Allah x", True, 12);
 
     // |
     assert(0, 0, 0, True, "a|b", "a", True, 1);
     assert(0, 0, 0, True, "abc|def", "abcef", True, 5);
     assert(0, 0, 0, True, "abc|def", "abdef", True, 5);
-    assert(0, 0, 0, True, "abc|def", "abef", False, 0);
+    assert(0, 0, 0, True, "abc|def", "abef", False, 2);
     assert(0, 0, 0, True, "a|b|c|d|ef", "cf", True, 2);
 
     // {}
     assert(0, 0, 0, True, "ab{cd{ef}gh}ij", "abcdefghij", True, 10);
     assert(0, 0, 0, True, "ab{cd}|{ef}gh", "abcdgh", True, 6);
     assert(0, 0, 0, True, "ab{cd}|{ef}gh", "abefgh", True, 6);
-    assert(0, 0, 0, True, "ab{cd}|{ef}gh", "abgh", False, 0);
+    assert(0, 0, 0, True, "ab{cd}|{ef}gh", "abgh", False, 2);
     assert(0, 0, 0, True, "a{a|b}", "ab", True, 2);
-    assert(0, 0, 0, True, "a{b|c}d", "abf", False, 0);
+    assert(0, 0, 0, True, "a{b|c}d", "abf", False, 2);
 
     // ^*
     assert(0, 0, 0, True, "a^*bc", "abc", True, 3);
@@ -142,16 +146,16 @@ void NMain() {
     assert(0, 0, 0, True, "x{ab}^*{cd}^*", "xab", True, 3);
     assert(0, 0, 0, True, "x{ab}^*{cd}^*", "xcd", True, 3);
     assert(0, 0, 0, True, "{xyz}^*xyz", "xyzxyzxyz", True, 3);
-    assert(0, 0, 0, True, "{{xyz}^*}xyz", "xyzxyzxyz", False, 0);
+    assert(0, 0, 0, True, "{{xyz}^*}xyz", "xyzxyzxyz", False, 9);
 
     // *
     assert(0, 0, 0, True, "*", "xyz", True, 3);
     assert(0, 0, 0, True, "**", "xyz", True, 3);
     assert(0, 0, 0, True, "********", "xyz", True, 3);
     assert(0, 0, 0, True, "********abc", "xyzabc", True, 6);
-    assert(0, 0, 0, True, "*a*b*c*", "__a__c__", False, 0);
+    assert(0, 0, 0, True, "*a*b*c*", "__a__c__", False, 8);
     assert(0, 0, 0, True, "*XYZ", "abcdefgXYZ", True, 10);
-    assert(0, 0, 0, True, "{*}XYZ", "abcdefgXYZ", False, 0);
+    assert(0, 0, 0, True, "{*}XYZ", "abcdefgXYZ", False, 10);
 
     // General test-cases,
     assert(0, 0, 0, True, "{a-z|A-Z}{a-z|A-Z|0-9}^*", "myVariable3", True, 11);
@@ -207,15 +211,12 @@ void NMain() {
             "var1=var2;", True, 30);
     destroyDeclaredVariables();
 
-    /*
     assert(&ncc, "DocumentTest2", matchListener, True, "${} Test2: ${document}", "\n"
             "Test2:\n"
             "var1;\n"
             "var2;\n"
             "var1=var3;", True, 20);
     destroyDeclaredVariables();
-
-    */
 
     NCC_destroyNCC(&ncc);
     NVector.destroy(&declaredVariables);

@@ -107,11 +107,12 @@ static struct NString* translateSingleFile(struct NCC* ncc, char* filePath, stru
 
     // Generate code,
     emitInitializationCode(ncc, VARIABLES);
-    int32_t matchLength = NCC_match(ncc, code);
+    struct NCC_MatchingResult matchingResult;
+    boolean matched = NCC_match(ncc, code, &matchingResult);
     emitTerminationCode(ncc);
 
     // Log and cleanup,
-    NLOGI("VMTranslate", "Match length: %d\n", matchLength);
+    NLOGI("VMTranslate", "Matched: %s, length: %d\n", matched ? "True" : "False", matchingResult.matchLength);
     NFREE(code, "VMTranslate.NMain() code 1");
 
     return outputFileName;
@@ -124,6 +125,7 @@ static struct NString* translateDirectory(struct NCC* ncc, char* directoryPath, 
     emitInitializationCode(ncc, VARIABLES | STACK_POINTER | SYS_INIT);
 
     // Translate .vm files,
+    boolean matched = True;
     int32_t matchLength = 0;
     struct NVector* directoryContents = NSystemUtils.listDirectoryEntries(directoryPath, False);
     for (int32_t i=NVector.size(directoryContents)-1; i>=0; i--) {
@@ -153,7 +155,9 @@ static struct NString* translateDirectory(struct NCC* ncc, char* directoryPath, 
         NString.set(&outputData->fileName, directoryEntry->name);
 
         // Generate code,
-        matchLength += NCC_match(ncc, code);
+        struct NCC_MatchingResult matchingResult;
+        matched &= NCC_match(ncc, code, &matchingResult);
+        matchLength += matchingResult.matchLength;
         emitCode(ncc, "// End of %s\n\n", directoryEntry->name);
 
         // Cleanup,
@@ -162,7 +166,7 @@ static struct NString* translateDirectory(struct NCC* ncc, char* directoryPath, 
     }
 
     // Log and cleanup,
-    NLOGI("VMTranslate", "Match length: %d\n", matchLength);
+    NLOGI("VMTranslate", "Match: %s, length: %d\n", matched ? "True" : "False", matchLength);
     NSystemUtils.destroyAndFreeDirectoryEntryVector(directoryContents);
 
     // Generate output file name,

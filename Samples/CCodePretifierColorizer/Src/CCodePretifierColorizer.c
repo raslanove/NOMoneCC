@@ -4,8 +4,8 @@
 
 #include <NCC.h>
 
-#define TEST_EXPRESSIONS  0
-#define TEST_DECLARATIONS 0
+#define TEST_EXPRESSIONS  1
+#define TEST_DECLARATIONS 1
 #define TEST_STATEMENTS   1
 
 void printListener(struct NCC_MatchingData* matchingData) {
@@ -698,12 +698,13 @@ void defineLanguage(struct NCC* ncc) {
 static void test(struct NCC* ncc, const char* code) {
 
     NLOGI("", "%sTesting: %s%s", NTCOLOR(GREEN_BRIGHT), NTCOLOR(HIGHLIGHT), code);
-    int32_t matchLength = NCC_match(ncc, code);
+    struct NCC_MatchingResult matchingResult;
+    boolean matched = NCC_match(ncc, code, &matchingResult);
     int32_t codeLength = NCString.length(code);
-    if (matchLength == codeLength) {
+    if (matched && matchingResult.matchLength == codeLength) {
         NLOGI("test()", "Success!");
     } else {
-        NERROR("test()", "Failed! MatchLength: %d", matchLength);
+        NERROR("test()", "Failed! Match: %s, length: %d", matched ? "True" : "False", matchingResult.matchLength);
     }
     NLOGI("", "");
 }

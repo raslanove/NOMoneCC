@@ -99,7 +99,7 @@ struct NCC_MatchingResult {
     int32_t matchLength;        // Can be used in the unconfirmed match listener only.
     boolean terminate;          // Can be used in the confirmed/unconfirmed match listeners.
     boolean pushVariable;       // Can be used in the confirmed/unconfirmed match listeners.
-    boolean couldNeedRollBack;  // Can be used in the unconfirmed match listener only. Set it if needed, otherwise, leave it unchanged.
+    boolean couldNeedRollBack;  // Can be used in the unconfirmed match listener only.
 };
 
 // Sent to the listeners,
@@ -147,7 +147,7 @@ void NCC_destroyRuleData(struct NCC_RuleData* ruleData);
 boolean NCC_addRule(struct NCC_RuleData* ruleData);
 boolean NCC_updateRule(struct NCC_RuleData* ruleData);
 
-int32_t NCC_match(struct NCC* ncc, const char* text); // Returns match length if matched, -1 if rejected.
+boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult); // Returns True if matched. Sets outResult.
 boolean NCC_popRuleVariable(struct NCC* ncc, struct NCC_Variable* outVariable); // Pops variables of the currently active rule.
 boolean NCC_getRuleVariable(struct NCC* ncc, uint32_t index, struct NCC_Variable* outVariable); // Gets variables of the currently active rule.
 void NCC_discardRuleVariables(struct NCC* ncc); // Discards variables of the currently active rule.
