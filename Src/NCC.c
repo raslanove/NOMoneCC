@@ -838,18 +838,16 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
 
     // If there's no following subrule, match as much as you can, and always return True,
     if (!nodeData->followingSubRule) {
+        MatchTree(repeatedNode, nodeData->repeatedNode, text, tempRoute1, {}, 0, {&repeatedNode}, 1)
+        if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
+            *matchingResult = repeatedNode.result;
+            return True;
+        }
 
-        // Attempt repeating,
-        NSystemUtils.memset(matchingResult, 0, sizeof(struct NCC_MatchingResult));
-        struct MatchedTree allRepeatsTree;
-        allRepeatsTree.route = &ncc->matchRoute;
-        allRepeatsTree.routeMark = NByteVector.size(ncc->matchRoute);;
-        allRepeatsTree.text = text;
-        do {
-            MatchTree(repeatedNode, nodeData->repeatedNode, &text[matchingResult->matchLength], tempRoute1, {&allRepeatsTree}, 1, {&repeatedNode COMMA &allRepeatsTree}, 2)
-            if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) return True;
-            PushTree(repeatedNode)
-        } while (True);
+        // Attempt matching again,
+        repeatNodeMatch(node, ncc, &text[repeatedNode.result.matchLength], matchingResult);
+        if (!matchingResult->terminate) PushTree(repeatedNode)
+        return True;
     }
 
     // Check if the following sub-rule matches,
@@ -1009,7 +1007,7 @@ static boolean anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const c
         totalMatchLength++;
     } while (True);
 
-conclude:
+    conclude:
     skipNLiterals(ncc, totalMatchLength);
     matchingResult->matchLength += totalMatchLength;
     return True;

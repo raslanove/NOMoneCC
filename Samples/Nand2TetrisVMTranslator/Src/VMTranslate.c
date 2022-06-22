@@ -5,7 +5,7 @@
 #include <NError.h>
 #include <NCString.h>
 
-static void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount);
+static void printMatch(struct NCC_MatchingData* matchingData);
 
 static void addRule(struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onConfirmedMatchListener matchListener, boolean rootRule, boolean pushVariable) {
     struct NCC_RuleData ruleData;
@@ -51,10 +51,10 @@ static void specifyLanguage(struct NCC* ncc) {
     addRule(ncc, "Document", "{${WhiteSpace} | ${LineComment} | ${Label} | ${Instruction}}^*", 0, True, True);
 }
 
-static void printMatch(struct NCC* ncc, struct NString* ruleName, int32_t variablesCount) {
-    NLOGI("VMTranslate", "ruleName: %s, variablesCount: %d", NString.get(ruleName), variablesCount);
+static void printMatch(struct NCC_MatchingData* matchingData) {
+    NLOGI("VMTranslate", "ruleName: %s, variablesCount: %d, length: %d, text: %s", NString.get(&matchingData->ruleData->ruleName), matchingData->variablesCount, matchingData->matchLength, matchingData->matchedText);
     struct NCC_Variable variable;
-    while (NCC_popRuleVariable(ncc, &variable)) {
+    while (NCC_popRuleVariable(matchingData->ruleData->ncc, &variable)) {
         NLOGI("VMTranslate", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), variable.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
         NCC_destroyVariable(&variable);
     }
