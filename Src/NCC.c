@@ -840,7 +840,8 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     if (!nodeData->followingSubRule) {
         MatchTree(repeatedNode, nodeData->repeatedNode, text, tempRoute1, {}, 0, {&repeatedNode}, 1)
         if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
-            *matchingResult = repeatedNode.result;
+            if (repeatedNodeMatched) DiscardTree(&repeatedNode)
+            NSystemUtils.memset(matchingResult, 0, sizeof(struct NCC_MatchingResult));
             return True;
         }
 
