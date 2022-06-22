@@ -100,6 +100,16 @@ boolean validateAssignmentListener(struct NCC_MatchingData* matchingData) {
 }
 
 //////////////////////////////////////
+// Rollback test
+//////////////////////////////////////
+
+void rollBackListener(struct NCC_MatchingData* matchingData) {
+    NLOGE("sdf", "Rollback begin");
+    matchListener(matchingData);
+    NLOGE("sdf", "Rollback end");
+}
+
+//////////////////////////////////////
 // Tests
 //////////////////////////////////////
 
@@ -108,6 +118,7 @@ void NMain() {
     NSystemUtils.logI("sdf", "besm Allah :)\n");
 
     // A number of test-cases that make sure that rules and matching behave as expected.
+    struct NCC ncc;
 
     // Literals,
     assert(0, 0, 0, True, "besm\\ Allah", "besm Allah", True, 10);
@@ -163,7 +174,6 @@ void NMain() {
     assert(0, 0, 0, True, "/\\**\\*/", "/*بسم الله. This is a beautiful comment.\n The is the second line in the beautiful comment.*/", True, 99);
 
     // Substitute,
-    struct NCC ncc;
     NCC_initializeNCC(&ncc);
     assert(&ncc, "Comment", matchListener, True, "/\\**\\*/", "/*besm Allah*/", True, 14);
     assert(&ncc, "TwoComments", matchListener, True, "${Comment},${Comment}", "/*first comment*/,/*second comment*/", True, 36);
@@ -196,10 +206,10 @@ void NMain() {
     struct NCC_RuleData ruleData;
     NCC_initializeRuleData(&ruleData, &ncc, "", "", 0, 0, 0, False, False, False);
     NVector.initialize(&declaredVariables, 0, sizeof(NString));
-    NCC_initializeNCC(&ncc);
 
+    NCC_initializeNCC(&ncc);
     NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
-    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-z|_ {a-z|A-z|_|0-9}^*")->setFlags(&ruleData, False, True, False));
+    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setFlags(&ruleData, False, True, False));
     NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData,        declarationListener, 0, 0));
     NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, validateAssignmentListener, 0, 0));
     NCC_addRule(ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData,                          0, 0, 0));
@@ -217,8 +227,16 @@ void NMain() {
             "var2;\n"
             "var1=var3;", True, 20);
     destroyDeclaredVariables();
-
     NCC_destroyNCC(&ncc);
+
+    // Rollback test,
+    NCC_initializeNCC(&ncc);
+    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*")->setFlags(&ruleData, False, False, False));
+    NCC_addRule(ruleData.set(&ruleData, "identifier"    , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setFlags(&ruleData, False, True, True));
+    NCC_addRule(ruleData.set(&ruleData, "declaration"   , "${identifier} ${} ${identifier};")->setListeners(&ruleData, 0, rollBackListener, 0));
+    assert(&ncc, "RollBackTest", matchListener, True, "${declaration}|${declaration}", "int a;", True, 6);
+    NCC_destroyNCC(&ncc);
+
     NVector.destroy(&declaredVariables);
     NCC_destroyRuleData(&ruleData);
 
