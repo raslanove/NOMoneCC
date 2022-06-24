@@ -17,6 +17,11 @@ void printListener(struct NCC_MatchingData* matchingData) {
     }
 }
 
+boolean rejectingPrintListener(struct NCC_MatchingData* matchingData) {
+    printListener(matchingData);
+    return False;
+}
+
 void definePreprocessing(struct NCC* ncc) {
 
     // =====================================
@@ -64,10 +69,11 @@ void defineLanguage(struct NCC* ncc) {
     //       ${} could necessary for code coloring, and not for compiling. This should be more obvious
     //       upon implementation.
 
-    struct NCC_RuleData plainRuleData, pushingRuleData, rootRuleData;
+    struct NCC_RuleData plainRuleData, pushingRuleData, rootRuleData, specialRuleData;
     NCC_initializeRuleData(&  plainRuleData, ncc, "", "", 0, 0,             0, False, False, False);
     NCC_initializeRuleData(&pushingRuleData, ncc, "", "", 0, 0,             0, False,  True, False);
     NCC_initializeRuleData(&   rootRuleData, ncc, "", "", 0, 0, printListener,  True, False, False);
+    NCC_initializeRuleData(&specialRuleData, ncc, "", "", 0, 0, printListener,  False, False, False);
 
     // =====================================
     // Lexical rules,
@@ -361,8 +367,6 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enum-specifier", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "typedef-name", "STUB!"));
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "type-specifier",
-                   // TODO: enable typedef when NCC is ready to handle it...
-                   /*
                    "{void} | {char} | "
                    "{short} | {int} | {long} | "
                    "{float} | {double} | "
@@ -372,15 +376,6 @@ void defineLanguage(struct NCC* ncc) {
                    "${struct-or-union-specifier} | "
                    "${enum-specifier} |"
                    "${typedef-name}"));
-                    */
-                   "{void} | {char} | "
-                   "{short} | {int} | {long} | "
-                   "{float} | {double} | "
-                   "{signed} | {unsigned} | "
-                   "{_Bool} | {_Complex} | "
-                   "${atomic-type-specifier} | "
-                   "${struct-or-union-specifier} | "
-                   "${enum-specifier}"));
 
     // Struct or union specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-or-union", "STUB!"));
@@ -536,7 +531,8 @@ void defineLanguage(struct NCC* ncc) {
                    "}^*"));
 
     // Typedef name,
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "typedef-name",
+    // ...XXX
+    NCC_updateRule(specialRuleData.setListeners(&specialRuleData, rejectingPrintListener, 0, 0)->set(&specialRuleData, "typedef-name",
                    "${identifier}"));
 
     // Initializer,
@@ -693,6 +689,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_destroyRuleData(&  plainRuleData);
     NCC_destroyRuleData(&pushingRuleData);
     NCC_destroyRuleData(&   rootRuleData);
+    NCC_destroyRuleData(&specialRuleData);
 }
 
 static void test(struct NCC* ncc, const char* code) {
