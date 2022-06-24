@@ -31,15 +31,7 @@
 //
 // Reserved characters (must be escaped):
 //   \ | - ^ * { } $
-//   Whitespaces must be escaped, otherwise they only serve to resolve ambiguities. For example:
-//     identifier = {a-z|A-Z}{a-z|A-Z|0-9}^0-49
-//   Does this mean a letter or a digit repeated from 0 to 49 times? Or is it from 0 to 4 followed
-//   by 9? It's the former. If we need that latter, we use:
-//     variableName = {a-z|A-Z}{a-z|A-Z|0-9}^0-4 9
-//   The space is ignored. It only serves to clearly indicate that the 9 is separate from the 4.
-//
-//   Note: now that we've removed the support for limited repeat, this ambiguity doesn't exist at all,
-//         still, spaces must still be escaped, for they can be used to make rules look a lot cleaner.
+//   and whitespaces. If whitespaces are not escaped, they are ignored. You can use them to make rules look a lot cleaner.
 //
 
 // Limitations:
@@ -71,10 +63,9 @@
 //
 // Or nodes:
 // ---------
-// Or nodes will consider whatever comes after the "|" a separate sub-rule. Or nodes work by
+// Or nodes will turn the node that comes after the "|" into a separate sub-rule. Or nodes work by
 // creating a tree for the node just before the "|" (lhs) and another tree for the node following
-// it (rhs). During matching, whichever gets the longest match is considered the correct match.
-// However, this effectively puts the next node within braces ({rhs}), hence exposing it to the
+// it (rhs). This effectively puts the next node within braces ({rhs}), hence exposing it to the
 // wildcard limitations.
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
