@@ -2,10 +2,7 @@
 
 #include <NSystemUtils.h>
 #include <NError.h>
-#include <NByteVector.h>
-#include <NString.h>
 #include <NCString.h>
-#include <NVector.h>
 
 #ifndef NCC_VERBOSE
 #define NCC_VERBOSE 0
@@ -13,58 +10,39 @@
 
 //
 // Operation:
-//   First, we construct our rules. Then, given a string, we find the match route. The match route is
-//   constructed in an NByteVector. We push single bytes or node pointers according to the following:
-//     0     : rule end marker.
-//     1->254: skip this number of literals.
-//     255   : rule beginning marker. Right after this, a substitute node index was pushed.
+//   First, we construct our rules. Then, we match, firing listeners as we proceed.
+//     - Create node listener: Given the rule, construct your AST node and return it.
+//     - Delete node listener: The node created in the previous step is not final. It could be rolled back.
+//                             Be ready to do so if this listener is fired.
+//     - Match       listener: Once the node and its children are constructed, this is fired. At this point,
+//                             you may inspect the node and decide if you'll accept this match.
 //
+
 // TODO: bytes indicating skipped literals should be combined together. The code is there, just commented
 // out because it's not working properly. Most probably it's because we can't discard stack history if it
 // was combined with what came before. A suggested fix is to push a delimiter after switching stacks to
 // prevent combining? Pushing and discarding the delimiter should be carefully woven together with the
 // stack switching calls.
 
-struct MatchedTree;
-
 static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule);
 static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule);
 static struct NCC_Rule* getRule(struct NCC* ncc, const char* ruleName);
-static void switchRoutes(struct NByteVector** route1, struct NByteVector** route2);
-static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tempRoute, int32_t tempRouteMark);
-static int32_t followMatchRoute(struct NCC* ncc, const char* text, struct MatchedTree* tree, boolean rollback);
-static int32_t substituteNodeFollowMatchRoute(struct NCC_Rule* rule, const char* text, struct MatchedTree* tree, boolean rollBack);
-
-struct MatchedTree {
-    struct NCC_MatchingResult result;
-    struct NByteVector **route;
-    uint32_t routeMark;
-    const char* text;
-};
-static void discardTree(struct NCC* ncc, struct MatchedTree* tree);
+static void discardTree(struct NCC_MatchingResult* tree, struct NCC_ASTNode_Data* parentNode);
 static boolean matchTree(
-        struct NCC* ncc, struct NCC_Node* tree, const char* text,
-        struct MatchedTree* matchingResult, struct NByteVector** route,
-        struct MatchedTree** treesToCountOnTerminateIfMatched, int32_t treesToCountCount, struct MatchedTree** treesToDiscardOnTerminate, int32_t treesToDiscardCount);
+        struct NCC* ncc, struct NCC_Node* tree, const char* text, struct NCC_MatchingResult* matchingResult,
+        int32_t lengthToAddIfTerminated, struct NCC_MatchingResult** astsToDeleteIfTerminated, int32_t astsToDeleteCount);
 
-#define COMMA , // See: https://stackoverflow.com/questions/20913103/is-it-possible-to-pass-a-brace-enclosed-initializer-as-a-macro-parameter#comment31397917_20913103
-#define MatchTree(treeName, treeNode, text, route, countList, countCount, discardList, discardCount) \
-    struct MatchedTree treeName; \
+#define COMMA ,
+#define MatchTree(treeName, treeNode, parentNode, text, lengthToAddIfTerminated, deleteList, deleteCount) \
+    struct NCC_MatchingResult treeName; \
+    treeName.astNode = (parentNode); \
     boolean treeName ## Matched = matchTree( \
-            ncc, treeNode, text, \
-            &treeName, &ncc->route, \
-            (struct MatchedTree*[]) countList, countCount, (struct MatchedTree*[]) discardList, discardCount); \
-    if (treeName.result.terminate) { \
-        *matchingResult = treeName.result; \
+            ncc, treeNode, text, &treeName, \
+            lengthToAddIfTerminated, (struct NCC_MatchingResult*[]) deleteList, deleteCount); \
+    if (treeName.terminate) { \
+        *matchingResult = treeName; \
         return treeName ## Matched; \
     }
-
-#define DiscardTree(tree) discardTree(ncc, tree);
-
-#define PushTree(tree) \
-    pushTempRouteIntoMatchRoute(ncc, *(tree).route, (tree).routeMark); \
-    matchingResult->couldNeedRollBack |= (tree).result.couldNeedRollBack; \
-    matchingResult->matchLength += (tree).result.matchLength;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Node
@@ -146,20 +124,6 @@ static NCC_Node_getNextNode     nodeGetNextNode    [] = {genericGetNextNode     
 static NCC_Node_deleteTree      nodeDeleteTree     [] = {genericDeleteTreeNoData, genericDeleteTreeNoData, literalsNodeDeleteTree, genericDeleteTreeWithData, orNodeDeleteTree      , subRuleNodeDeleteTree , repeatNodeDeleteTree  , anythingNodeDeleteTree, substituteNodeDeleteTree};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Variable
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-struct NCC_Variable* NCC_initializeVariable(struct NCC_Variable* variable, const char* name, const char* value) {
-    variable->name = name;
-    NString.initialize(&variable->value, "%s", value);
-    return variable;
-}
-
-void NCC_destroyVariable(struct NCC_Variable* variable) {
-    NString.destroy(&variable->value);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rule
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -169,40 +133,31 @@ struct NCC_Rule {
     uint32_t index;
 };
 
-static struct NCC_RuleData* ruleDataSet(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText) {
+static struct NCC_RuleData* ruleDataSet(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText,  boolean isRoot) {
     NString.set(&ruleData->ruleName, "%s", ruleName);
     NString.set(&ruleData->ruleText, "%s", ruleText);
+    ruleData->isRoot = isRoot;
     return ruleData;
 }
 
-static struct NCC_RuleData* ruleDataSetListeners(struct NCC_RuleData* ruleData, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener) {
-    ruleData->onUnconfirmedMatchListener = onUnconfirmedMatchListener;
-    ruleData->onRollBackMatchListener = onRollBackMatchListener;
-    ruleData->onConfirmedMatchListener = onConfirmedMatchListener;
+static struct NCC_RuleData* ruleDataSetListeners(struct NCC_RuleData* ruleData, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener) {
+    ruleData->createNodeListener = createNodeListener;
+    ruleData->deleteNodeListener = deleteNodeListener;
+    ruleData->matchListener = matchListener;
     return ruleData;
 }
 
-static struct NCC_RuleData* ruleDataSetFlags(struct NCC_RuleData* ruleData, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
-    ruleData->rootRule = rootRule;
-    ruleData->pushVariable = pushVariable;
-    ruleData->popsChildrenVariables = popsChildrenVariables;
-    return ruleData;
-}
-
-struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables) {
+struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener, boolean isRoot) {
 
     ruleData->ncc = ncc;
     NString.initialize(&ruleData->ruleName, "%s", ruleName);
     NString.initialize(&ruleData->ruleText, "%s", ruleText);
-    ruleData->onUnconfirmedMatchListener = onUnconfirmedMatchListener;
-    ruleData->onRollBackMatchListener = onRollBackMatchListener;
-    ruleData->onConfirmedMatchListener = onConfirmedMatchListener;
-    ruleData->rootRule = rootRule;
-    ruleData->pushVariable = pushVariable;
-    ruleData->popsChildrenVariables = popsChildrenVariables;
+    ruleData->createNodeListener = createNodeListener;
+    ruleData->deleteNodeListener = deleteNodeListener;
+    ruleData->matchListener = matchListener;
+    ruleData->isRoot = isRoot;
 
     ruleData->set = ruleDataSet;
-    ruleData->setFlags = ruleDataSetFlags;
     ruleData->setListeners = ruleDataSetListeners;
 
     return ruleData;
@@ -265,68 +220,6 @@ static void genericDeleteTreeWithData(struct NCC_Node* tree) {
     NFREE(tree      , "NCC.genericDeleteTreeWithData() tree"      );
 }
 
-static void skipNLiteralsNoCombine(struct NCC* ncc, uint32_t n) {
-    while (n > 254) {
-        NByteVector.pushBack(ncc->matchRoute, 254);
-        n-= 254;
-    }
-    NByteVector.pushBack(ncc->matchRoute, n);
-}
-
-// Returns true if combined successfully, False if just pushed.
-static boolean skipNLiterals(struct NCC* ncc, uint32_t n) {
-
-    // TODO: fix combining!
-    if (True) {
-        skipNLiteralsNoCombine(ncc, n);
-        return False;
-    }
-
-    uint8_t lastPushedValue=0;
-    if (!NByteVector.popBack(ncc->matchRoute, &lastPushedValue)) {
-        skipNLiteralsNoCombine(ncc, n);
-        return False;
-    }
-    if ((lastPushedValue==0) || (lastPushedValue==255)) {
-        NByteVector.pushBack(ncc->matchRoute, lastPushedValue);
-        skipNLiteralsNoCombine(ncc, n);
-        return False;
-    }
-
-    skipNLiteralsNoCombine(ncc, (uint32_t) n + lastPushedValue);
-    return True;
-}
-
-static int32_t followMatchRoute(struct NCC* ncc, const char* text, struct MatchedTree* tree, boolean rollback) {
-
-    // TODO: do we need a separate text parameter?
-
-    uint32_t matchLength = 0;
-    uint8_t currentValue=0;
-    struct NByteVector* route = *tree->route;
-    while (NByteVector.size(route) > tree->routeMark) {
-
-        NByteVector.popBack(route, &currentValue);
-        if (currentValue==0) {
-            // This rule just ended,
-            break;
-        } else if (currentValue == 255) {
-
-            // If following is a substitute node index,
-            uint32_t ruleIndex = 0;
-            NByteVector.popBackBulk(route, &ruleIndex, ncc->ruleIndexSizeBytes);
-            struct NCC_Rule* rule = *((struct NCC_Rule**) NVector.get(&ncc->rules, ruleIndex));
-            matchLength += substituteNodeFollowMatchRoute(rule, &text[matchLength], tree, rollback);
-            continue;
-        }
-
-        // This is just a skip,
-        matchLength += currentValue;
-    }
-
-    return matchLength;
-}
-
 static struct NCC_Node* genericCreateNode(int32_t type, void* data) {
     struct NCC_Node* node = NMALLOC(sizeof(struct NCC_Node), "NCC.genericCreateNode() node");
     node->type = type;
@@ -363,8 +256,7 @@ static void acceptNodeSetNextNode(struct NCC_Node* node, struct NCC_Node* nextNo
 
 static boolean acceptNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_MatchingResult* matchingResult) {
     NSystemUtils.memset(matchingResult, 0, sizeof(struct NCC_MatchingResult));
-    // Reaching accept node means that the strings matches the rule, even if the string is not over yet,
-    return True;
+    return True; // Reaching accept node means that the strings matches the rule, even if the string is not over yet,
 }
 
 static struct NCC_Node* createAcceptNode(struct NCC_Node* parentNode) {
@@ -392,11 +284,7 @@ static boolean literalsNodeMatch(struct NCC_Node* node, struct NCC* ncc, const c
     int32_t length = NString.length(&nodeData->literals);
     boolean matched = nodeMatch[node->nextNode->type](node->nextNode, ncc, &text[length], matchingResult);
     matchingResult->matchLength += length;
-    if (matchingResult->terminate) return matched;
-    if (!matched) return False;
-
-    skipNLiterals(ncc, length);
-    return True;
+    return matched;
 }
 
 static void literalsNodeDeleteTree(struct NCC_Node* tree) {
@@ -463,11 +351,7 @@ static boolean literalRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, con
 
     boolean matched = nodeMatch[node->nextNode->type](node->nextNode, ncc, &text[1], matchingResult);
     matchingResult->matchLength++;
-    if (matchingResult->terminate) return matched;
-    if (!matched) return False;
-
-    skipNLiterals(ncc, 1);
-    return True;
+    return matched;
 }
 
 static struct NCC_Node* createLiteralRangeNode(unsigned char rangeStart, unsigned char rangeEnd) {
@@ -572,49 +456,39 @@ struct OrNodeData {
 
 static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_MatchingResult* matchingResult) {
     struct OrNodeData* nodeData = node->data;
+    struct NCC_ASTNode_Data parentNode = matchingResult->astNode;
 
     // Match the sides on temporary routes,
     // Right hand side,
-    MatchTree(rhs, nodeData->rhsTree, text, tempRoute1, {}, 0, {&rhs}, 1)
-    /*
-    // The above MatchTree macro expanded form:
-    struct MatchedTree rhs;
-    boolean rhsMatched = matchTree(ncc, nodeData->rhsTree, text,
-            &rhs, &ncc->tempRoute1,
-            (struct MatchedTree*[]) {&rhs}, 1, 0, 0);
-    if (rhs.result.terminate) {
-        *matchingResult = rhs.result;
-        return rhsMatched;
-    }*/
+    MatchTree(rhs, nodeData->rhsTree, parentNode, text, 0, {&rhs}, 1)
 
     // Left hand side,
-    MatchTree(lhs, nodeData->lhsTree, text, tempRoute2, {}, 0, {&rhs COMMA &lhs}, 2)
+    MatchTree(lhs, nodeData->lhsTree, parentNode, text, 0, {&rhs COMMA &lhs}, 2)
 
     // If neither right or left matches,
     if ((!rhsMatched) && (!lhsMatched)) {
-        *matchingResult = rhs.result.matchLength > lhs.result.matchLength ? rhs.result : lhs.result;
+        *matchingResult = rhs.matchLength > lhs.matchLength ? rhs : lhs;
         return False;
     }
 
     // If we needn't check the following tree twice,
-    if ((rhs.result.matchLength==lhs.result.matchLength) ||
+    if ((rhs.matchLength==lhs.matchLength) ||
         (!rhsMatched) ||
         (!lhsMatched)) {
 
         // Get the matched tree if only one side matched, or the rule that occurs first (lhs) otherwise,
-        struct MatchedTree* matchedTree = lhsMatched ? &lhs : &rhs;
-        MatchTree(nextNode, node->nextNode, &text[matchedTree->result.matchLength], matchRoute, {matchedTree}, 1, {&nextNode COMMA &lhs COMMA &rhs}, 3)
-        *matchingResult = nextNode.result;
-        if (nextNode.result.terminate || !nextNodeMatched) {
-            DiscardTree(&lhs)
-            DiscardTree(&rhs)
-            matchingResult->matchLength += matchedTree->result.matchLength;
+        struct NCC_MatchingResult* matchedTree = lhsMatched ? &lhs : &rhs;
+        MatchTree(nextNode, node->nextNode, parentNode, &text[matchedTree->matchLength], matchedTree->matchLength, {&nextNode COMMA &lhs COMMA &rhs}, 3)
+        NSystemUtils.memset(matchingResult, 0, sizeof(struct NCC_MatchingResult));
+        matchingResult->matchLength = nextNode.matchLength + matchedTree->matchLength;
+        if (!nextNodeMatched) {
+            if (lhsMatched) discardTree(&lhs, &parentNode);
+            if (rhsMatched) discardTree(&rhs, &parentNode);
             return False;
         }
 
-        // Push the correct temporary route,
-        if (lhsMatched && rhsMatched) DiscardTree(&rhs)
-        PushTree(*matchedTree)
+        // Discard the unused tree (if any),
+        if (lhsMatched && rhsMatched) discardTree(&rhs, &parentNode);
         return True;
     }
 
@@ -622,26 +496,26 @@ static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
     // to take the rest of the tree into account by matching at both right and left lengths,
 
     // Right hand side,
-    MatchTree(rhsTree, node->nextNode, &text[rhs.result.matchLength], tempRoute3, {&rhs}, 1, {&rhsTree COMMA &lhs COMMA &rhs}, 3)
+    MatchTree(rhsTree, node->nextNode, parentNode, &text[rhs.matchLength], rhs.matchLength, {&rhsTree COMMA &lhs COMMA &rhs}, 3)
 
     // Left hand side,
-    MatchTree(lhsTree, node->nextNode, &text[lhs.result.matchLength], tempRoute4, {&lhs}, 1, {&lhsTree COMMA &rhsTree COMMA &lhs COMMA &rhs}, 4)
+    MatchTree(lhsTree, node->nextNode, parentNode, &text[lhs.matchLength], lhs.matchLength, {&lhsTree COMMA &rhsTree COMMA &lhs COMMA &rhs}, 4)
 
     // If neither right or left trees match,
-    int32_t rhsMatchLength = rhs.result.matchLength + rhsTree.result.matchLength;
-    int32_t lhsMatchLength = lhs.result.matchLength + lhsTree.result.matchLength;
+    int32_t rhsMatchLength = rhs.matchLength + rhsTree.matchLength;
+    int32_t lhsMatchLength = lhs.matchLength + lhsTree.matchLength;
     if ((!rhsTreeMatched) && (!lhsTreeMatched)) {
 
         // Return the result with the longest match,
         if (rhsMatchLength > lhsMatchLength) {
-            *matchingResult = rhsTree.result;
+            *matchingResult = rhsTree;
             matchingResult->matchLength = rhsMatchLength;
         } else {
-            *matchingResult = lhsTree.result;
+            *matchingResult = lhsTree;
             matchingResult->matchLength = lhsMatchLength;
         }
-        DiscardTree(&lhs)
-        DiscardTree(&rhs)
+        discardTree(&lhs, &parentNode);
+        discardTree(&rhs, &parentNode);
         return False;
     }
 
@@ -652,15 +526,15 @@ static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
     // Push the correct temporary routes,
     NSystemUtils.memset(matchingResult, 0, sizeof(struct NCC_MatchingResult));
     if (rhsMatchLength > lhsMatchLength) {
-        DiscardTree(&lhsTree)
-        DiscardTree(&lhs)
-        PushTree(rhsTree)
-        PushTree(rhs)
+        discardTree(&lhsTree, &parentNode);
+        discardTree(&lhs    , &parentNode);
+        matchingResult->matchLength += rhsTree.matchLength;
+        matchingResult->matchLength += rhs    .matchLength;
     } else {
-        DiscardTree(&rhsTree)
-        DiscardTree(&rhs)
-        PushTree(lhsTree)
-        PushTree(lhs)
+        discardTree(&rhsTree, &parentNode);
+        discardTree(&rhs    , &parentNode);
+        matchingResult->matchLength += lhsTree.matchLength;
+        matchingResult->matchLength += lhs    .matchLength;
     }
 
     // Or nodes don't get pushed into the route,
@@ -1403,37 +1277,30 @@ static void pushTempRouteIntoMatchRoute(struct NCC* ncc, struct NByteVector* tem
     NByteVector.resize(tempRoute, tempRouteMark);
 }
 
-static void discardTree(struct NCC* ncc, struct MatchedTree* tree) {
-    if (tree->result.couldNeedRollBack) {
-        NLOGW("sdf", "ROLLLIIINNNNGGGGG!!!!: %s", tree->text);
-        followMatchRoute(ncc, tree->text, tree, True);
-    } else {
-        NByteVector.resize(*tree->route, tree->routeMark);
-    }
+static void discardTree(struct NCC_MatchingResult* tree, struct NCC_ASTNode_Data* parentNode) {
+    if (!tree->astNode.node) return;
+    NCC_deleteNodeListener deleteListener = tree->astNode.rule->deleteNodeListener;
+    if (deleteListener) deleteListener(&tree->astNode, parentNode);
+    tree->astNode.rule = 0;
+    tree->astNode.node = 0;
 }
 
 static boolean matchTree(
-        struct NCC* ncc, struct NCC_Node* tree, const char* text,
-        struct MatchedTree* matchingResult, struct NByteVector** route,
-        struct MatchedTree** treesToCountOnTerminateIfMatched, int32_t treesToCountCount, struct MatchedTree** treesToDiscardOnTerminate, int32_t treesToDiscardCount) {
+        struct NCC* ncc, struct NCC_Node* tree, const char* text, struct NCC_MatchingResult* matchingResult,
+        int32_t lengthToAddIfTerminated, struct NCC_MatchingResult** astsToDeleteIfTerminated, int32_t astsToDeleteCount) {
 
     // Match,
-    matchingResult->route = route;
-    switchRoutes(&ncc->matchRoute, route);
-    matchingResult->routeMark = NByteVector.size(ncc->matchRoute);
-    matchingResult->text = text;
-    boolean matched = nodeMatch[tree->type](tree, ncc, text, &matchingResult->result);
-    switchRoutes(&ncc->matchRoute, route);
+    struct NCC_ASTNode_Data parentNode = matchingResult->astNode;
+    boolean matched = nodeMatch[tree->type](tree, ncc, text, matchingResult);
 
     // Return immediately if termination didn't take place,
-    if (!matchingResult->result.terminate) return matched;
+    if (!matchingResult->terminate) return matched;
 
     // Termination took place,
-    // Count trees,
-    for (int32_t i=0; i<treesToCountCount; i++) matchingResult->result.matchLength += treesToCountOnTerminateIfMatched[i]->result.matchLength;
+    matchingResult->matchLength += lengthToAddIfTerminated;
 
-    // Discard trees,
-    for (int32_t i=0; i<treesToDiscardCount; i++) DiscardTree(treesToDiscardOnTerminate[i]);
+    // Delete ast nodes,
+    for (int32_t i=0; i<astsToDeleteCount; i++) discardTree(astsToDeleteIfTerminated[i], &parentNode);
 
     return matched;
 }

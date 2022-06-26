@@ -72,85 +72,58 @@
 // NCC
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct NCC_Variable;
-struct NByteVector;
 struct NCC_RuleData;
 
 struct NCC {
     void* extraData;
-    struct NVector rules; // Pointers to rules, not rules, so that they don't get relocated when more rules are added.
-    struct NVector variables;
-    struct NByteVector *matchRoute, *tempRoute1, *tempRoute2, *tempRoute3, *tempRoute4; // Pointers to nodes. TODO: maybe turn them into an array?
-    uint32_t currentCallStackBeginning;
+    struct NVector rules; // Pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
     uint32_t ruleIndexSizeBytes;
 };
 
-// Returned from the unconfirmed match listener,
-struct NCC_MatchingResult {
-    int32_t matchLength;        // Can be used in the unconfirmed match listener only.
-    boolean terminate;          // Can be used in the confirmed/unconfirmed match listeners.
-    boolean pushVariable;       // Can be used in the confirmed/unconfirmed match listeners.
-    boolean couldNeedRollBack;  // Can be used in the unconfirmed match listener only.
+struct NCC_ASTNode_Data {
+    void* node;
+    struct NCC_RuleData* rule;
 };
 
-// Sent to the listeners,
+struct NCC_MatchingResult {
+    struct NCC_ASTNode_Data astNode;
+    int32_t matchLength;
+    boolean terminate;
+};
+
+// Note that this is a superset of NCC_MatchingResult.
 struct NCC_MatchingData {
-    struct NCC_RuleData* ruleData;
+    struct NCC_ASTNode_Data astNode;
     char* matchedText;
     int32_t matchLength;
-    int32_t variablesCount;
-
-    struct NCC_MatchingResult outResult; // Setting these overrides the default values.
+    boolean terminate;
 };
 
-typedef boolean (*NCC_onUnconfirmedMatchListener)(struct NCC_MatchingData* matchingData);
-typedef void    (*   NCC_onRollBackMatchListener)(struct NCC_MatchingData* matchingData);
-typedef void    (*  NCC_onConfirmedMatchListener)(struct NCC_MatchingData* matchingData);
+typedef void*   (*NCC_createNodeListener)(struct NCC_RuleData* ruleData, void* parentNode);
+typedef void    (*NCC_deleteNodeListener)(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
+typedef boolean (*NCC_matchListener)(struct NCC_MatchingData* matchingData);  // Returns true if node accepted. Also, may set the match length and the terminate fields.
 
 struct NCC_RuleData {
     struct NCC* ncc;
     struct NString ruleName;
     struct NString ruleText;
-    NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener;
-    NCC_onRollBackMatchListener       onRollBackMatchListener;
-    NCC_onConfirmedMatchListener     onConfirmedMatchListener;
-    boolean rootRule;              // True: can be matched alone. False: must be part of some other rule.
-    boolean pushVariable;          // False: matches, but the value is ignored.
-    boolean popsChildrenVariables; // False: keeps the variables of nested rules.
-
-    struct NCC_RuleData* (*set)(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText);
-    struct NCC_RuleData* (*setListeners)(struct NCC_RuleData* ruleData, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener);
-    struct NCC_RuleData* (*setFlags)(struct NCC_RuleData* ruleData, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
+    NCC_createNodeListener createNodeListener;
+    NCC_deleteNodeListener deleteNodeListener;
+    NCC_matchListener matchListener;
+    boolean isRoot;              // True: can be matched alone. False: must be part of some other rule.
+    struct NCC_RuleData* (*set)(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText, boolean isRoot);
+    struct NCC_RuleData* (*setListeners)(struct NCC_RuleData* ruleData, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener);
 };
-
-// TODO: populate and return NCC_MatchingResult from matching functions...
-// TODO: implement roll-back...
-// TODO: return match length even if match failed...
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
 
-struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_onUnconfirmedMatchListener onUnconfirmedMatchListener, NCC_onRollBackMatchListener onRollBackMatchListener, NCC_onConfirmedMatchListener onConfirmedMatchListener, boolean rootRule, boolean pushVariable, boolean popsChildrenVariables);
+struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener, boolean isRoot);
 void NCC_destroyRuleData(struct NCC_RuleData* ruleData);
 
 boolean NCC_addRule(struct NCC_RuleData* ruleData);
 boolean NCC_updateRule(struct NCC_RuleData* ruleData);
 
 boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult); // Returns True if matched. Sets outResult.
-boolean NCC_popRuleVariable(struct NCC* ncc, struct NCC_Variable* outVariable); // Pops variables of the currently active rule.
-boolean NCC_getRuleVariable(struct NCC* ncc, uint32_t index, struct NCC_Variable* outVariable); // Gets variables of the currently active rule.
-void NCC_discardRuleVariables(struct NCC* ncc); // Discards variables of the currently active rule.
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Variable
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-struct NCC_Variable {
-    const char* name;
-    struct NString value;
-};
-
-struct NCC_Variable* NCC_initializeVariable(struct NCC_Variable* variable, const char* name, const char* value);
-void NCC_destroyVariable(struct NCC_Variable* variable);
