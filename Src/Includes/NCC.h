@@ -73,11 +73,14 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct NCC_RuleData;
+struct NCC_Rule;
 
+#define NCC_AST_NODE_STACKS_COUNT 5
 struct NCC {
     void* extraData;
     struct NVector rules; // Pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
-    uint32_t ruleIndexSizeBytes;
+    struct NCC_Rule* matchRule;
+    struct NVector* astNodeStacks[NCC_AST_NODE_STACKS_COUNT]; // NCC_ASTNode_Data.
 };
 
 struct NCC_ASTNode_Data {
@@ -86,20 +89,18 @@ struct NCC_ASTNode_Data {
 };
 
 struct NCC_MatchingResult {
-    struct NCC_ASTNode_Data astNode;
     int32_t matchLength;
     boolean terminate;
 };
 
-// Note that this is a superset of NCC_MatchingResult.
 struct NCC_MatchingData {
-    struct NCC_ASTNode_Data astNode;
-    char* matchedText;
+    struct NCC_ASTNode_Data node;
+    const char* matchedText;
     int32_t matchLength;
     boolean terminate;
 };
 
-typedef void*   (*NCC_createNodeListener)(struct NCC_RuleData* ruleData, void* parentNode);
+typedef void*   (*NCC_createNodeListener)(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode);
 typedef void    (*NCC_deleteNodeListener)(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
 typedef boolean (*NCC_matchListener)(struct NCC_MatchingData* matchingData);  // Returns true if node accepted. Also, may set the match length and the terminate fields.
 
@@ -110,8 +111,7 @@ struct NCC_RuleData {
     NCC_createNodeListener createNodeListener;
     NCC_deleteNodeListener deleteNodeListener;
     NCC_matchListener matchListener;
-    boolean isRoot;              // True: can be matched alone. False: must be part of some other rule.
-    struct NCC_RuleData* (*set)(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText, boolean isRoot);
+    struct NCC_RuleData* (*set)(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText);
     struct NCC_RuleData* (*setListeners)(struct NCC_RuleData* ruleData, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener);
 };
 
@@ -120,10 +120,10 @@ struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
 
-struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener, boolean isRoot);
+struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener);
 void NCC_destroyRuleData(struct NCC_RuleData* ruleData);
 
 boolean NCC_addRule(struct NCC_RuleData* ruleData);
 boolean NCC_updateRule(struct NCC_RuleData* ruleData);
-
-boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult); // Returns True if matched. Sets outResult.
+boolean NCC_setRootRule(struct NCC* ncc, const char* ruleName);
+boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult, struct NCC_ASTNode_Data* outNode); // Returns True if matched. Sets outResult and outNode.
