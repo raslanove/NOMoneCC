@@ -13,8 +13,9 @@ struct NCC_ASTNode;
 void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString);
 void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode);
 void  NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
+boolean NCC_matchASTNode(struct NCC_MatchingData* matchingData);
 
-void assert(struct NCC* ncc, const char*ruleName, NCC_matchListener onMatchListener, const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength, boolean logTree) {
+void assert(struct NCC* ncc, const char*ruleName, const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength, boolean logTree) {
 
     boolean nccNeedsDeletion = False;
     if (!ncc) {
@@ -24,7 +25,7 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_matchListener onMatchListe
     if (!ruleName) ruleName = "AssertTemp";
 
     struct NCC_RuleData ruleData;
-    NCC_initializeRuleData(&ruleData, ncc, ruleName, rule, 0, 0, onMatchListener);
+    NCC_initializeRuleData(&ruleData, ncc, ruleName, rule, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode);
     boolean success = NCC_addRule(&ruleData);
     NCC_destroyRuleData(&ruleData);
     if (!success) {
@@ -43,17 +44,20 @@ void assert(struct NCC* ncc, const char*ruleName, NCC_matchListener onMatchListe
         NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT));
     } else if (expectedMatchLength != matchingResult.matchLength) {
         NERROR("HelloCC", "assert(): Wrong match length. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s, Expected match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), expectedMatchLength, NTCOLOR(STREAM_DEFAULT));
-    } else if (logTree) {
+    } else if (matched && logTree) {
+
+        // Get the tree in string format,
         struct NString treeString;
         NString.initialize(&treeString, "");
         NCC_ASTTreeToString(treeData.node, 0, &treeString);
+
+        // Print and clean up,
         NLOGI("", "%s", NString.get(&treeString));
         NString.destroy(&treeString);
         NCC_deleteASTNode(&treeData, 0);
     }
 
     if (nccNeedsDeletion) NCC_destroyAndFreeNCC(ncc);
-    NLOGI("", "");
 }
 
 boolean printListener(struct NCC_MatchingData* matchingData) {
@@ -127,29 +131,37 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
 
     // 179 = │, 192 = └ , 195 = ├. But somehow, this doesn't work. Had to use unicode...?
 
-    // Prepare new prefix,
-    struct NString* newPrefix;
+    boolean lastChild;
+
+    // Prepare children prefix from the initial one,
+    struct NString* childrenPrefix;
     if (prefix) {
-        struct NString* temp1 = NString.replace(NString.get(prefix), "─", " ");
+        const char* prefixCString = NString.get(prefix);
+        lastChild = NCString.contains(prefixCString, "└");
+
+        struct NString* temp1 = NString.replace(prefixCString, "─", " ");
         struct NString* temp2 = NString.replace(NString.get(temp1 ), "├", "│");
         NString.destroyAndFree(temp1);
-        newPrefix = NString.replace(NString.get(temp2), "└", " ");
+        childrenPrefix = NString.replace(NString.get(temp2), "└", " ");
         NString.destroyAndFree(temp2);
-    } else {
-        newPrefix = NString.create("");
-    }
 
-    // Print this node,
-    if (prefix) NString.append(outString, "%s", NString.get(prefix));
+        // First line uses the plain old prefix,
+        NString.append(outString, "%s", prefixCString);
+    } else {
+        lastChild = False;
+        childrenPrefix = NString.create("");
+    }
+    const char* childrenPrefixCString = NString.get(childrenPrefix);
 
     // Tree value could span multiple lines, remove line-breaks,
     int32_t childrenCount = NVector.size(&tree->childNodes);
-    if (NCString.lastIndexOf(NString.get(&tree->value), "\n")!=-1) {
+    boolean containsLineBreak = NCString.contains(NString.get(&tree->value), "\n");
+    if (containsLineBreak) {
         struct NString  temp1;
         struct NString *temp2;
-        NString.initialize(&temp1, "\n%s%s", NString.get(newPrefix), childrenCount ? "│" : " ");
+        NString.initialize(&temp1, "\n%s%s", childrenPrefixCString, childrenCount ? "│" : " ");
         temp2 = NString.replace(NString.get(&tree->value), "\n", NString.get(&temp1));
-        NString.append(outString, "%s: %s%s\n", NString.get(&tree->name), NString.get(temp2), NString.get(&temp1));
+        NString.append(outString, "%s:%s%s%s\n", NString.get(&tree->name), NString.get(&temp1), NString.get(temp2), NString.get(&temp1));
         NString.destroy(&temp1);
         NString.destroyAndFree(temp2);
     } else {
@@ -161,12 +173,16 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
     NString.initialize(&childPrefix, "");
     for (int32_t i=0; i<childrenCount; i++) {
         boolean lastChild = (i==(childrenCount-1));
-        NString.set(&childPrefix, "%s%s", NString.get(newPrefix), lastChild ? "└─" : "├─");
+        NString.set(&childPrefix, "%s%s", childrenPrefixCString, lastChild ? "└─" : "├─");
         struct NCC_ASTNode* currentChild = *((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i));
         NCC_ASTTreeToString(currentChild, &childPrefix, outString);
-        if (lastChild) NString.append(outString, "%s\n", NString.get(newPrefix));
     }
-    NString.destroyAndFree(newPrefix);
+
+    // Extra line break if this was the last child of its parent,
+    boolean containsContinuation = NCString.contains(childrenPrefixCString, "│");
+    if (lastChild && !containsLineBreak && containsContinuation) NString.append(outString, "%s\n", childrenPrefixCString);
+
+    NString.destroyAndFree(childrenPrefix);
     NString.destroy(&childPrefix);
 }
 
@@ -230,23 +246,23 @@ void NMain() {
     // A number of test-cases that make sure that rules and matching behave as expected.
     struct NCC ncc;
 
-//    // Literals,
-//    assert(0, 0, 0, "besm\\ Allah", "besm Allah", True, 10);
-//
-//    // x-y
-//    assert(0, 0, 0, "besm\\ Allah\\ a-z", "besm Allah x", True, 12);
-//    assert(0, 0, 0, "besm\\ Allah\\ a-z", "besm Allah 2", False, 11);
-//    assert(0, 0, 0, "besm\\ Allah\\ \\a-\\z", "besm Allah x", True, 12);
-//
-//    // |
-//    assert(0, 0, 0, "a|b", "a", True, 1);
-//    assert(0, 0, 0, "abc|def", "abcef", True, 5);
-//    assert(0, 0, 0, "abc|def", "abdef", True, 5);
-//    assert(0, 0, 0, "abc|def", "abef", False, 2);
-//    assert(0, 0, 0, "a|b|c|d|ef", "cf", True, 2);
-//
-//    // {}
-//    assert(0, 0, 0, "ab{cd{ef}gh}ij", "abcdefghij", True, 10);
+    // Literals,
+    assert(0, 0, "besm\\ Allah", "besm Allah", True, 10, True);
+
+    // x-y
+    assert(0, 0, "besm\\ Allah\\ a-z", "besm Allah x", True, 12, True);
+    assert(0, 0, "besm\\ Allah\\ a-z", "besm Allah 2", False, 11, False);
+    assert(0, 0, "besm\\ Allah\\ \\a-\\z", "besm Allah x", True, 12, False);
+
+    // |
+    assert(0, 0, "a|b", "a", True, 1, False);
+    assert(0, 0, "abc|def", "abcef", True, 5, False);
+    assert(0, 0, "abc|def", "abdef", True, 5, False);
+    assert(0, 0, "abc|def", "abef", False, 2, False);
+    assert(0, 0, "a|b|c|d|ef", "cf", True, 2, False);
+
+    // {}
+    assert(0, 0, "ab{cd{ef}gh}ij", "abcdefghij", True, 10, False);
 //    assert(0, 0, 0, "ab{cd}|{ef}gh", "abcdgh", True, 6);
 //    assert(0, 0, 0, "ab{cd}|{ef}gh", "abefgh", True, 6);
 //    assert(0, 0, 0, "ab{cd}|{ef}gh", "abgh", False, 2);
@@ -283,27 +299,26 @@ void NMain() {
 //    assert(0, 0, 0, "{a-z|A-Z}{a-z|A-Z|0-9}^*", "3myVariable3", False, 0);
 //    assert(0, 0, 0, "/\\**\\*/", "/*بسم الله. This is a beautiful comment.\n The is the second line in the beautiful comment.*/", True, 99);
 //
-//    // Substitute,
-//    NCC_initializeNCC(&ncc);
-//    assert(&ncc, "Comment", printListener, "/\\**\\*/", "/*besm Allah*/", True, 14);
-//    assert(&ncc, "TwoComments", printListener, "${Comment},${Comment}",
-//           "/*first comment*/,/*second comment*/", True, 36);
-//    assert(&ncc, "ThreeComments", printListener, "${TwoComments},${Comment}",
-//           "/*first comment*/,/*second comment*/,/*thirrrrrd comment*/", True, 58);
-//    NCC_destroyNCC(&ncc);
-//
-//    NCC_initializeNCC(&ncc);
-//    assert(&ncc, "Optional", printListener, "{ab}^*{cd}^*", "", True, 0);
-//    assert(&ncc, "Mandatory", printListener, "xyz", "xyz", True, 3);
-//    assert(&ncc, "ContainingOptional", printListener, "${Optional}${Mandatory}", "xyz", True, 3);
-//    NCC_destroyNCC(&ncc);
-//
-//    NCC_initializeNCC(&ncc);
-//    assert(&ncc, "Milestone", printListener, "", "", True, 0);
-//    assert(&ncc, "ActualRule1", printListener, "${Milestone}abc", "abc", True, 3);
-//    assert(&ncc, "ActualRule2", printListener, "xyz", "xyz", True, 3);
-//    NCC_destroyNCC(&ncc);
-//
+    // Substitute,
+    NCC_initializeNCC(&ncc);
+    assert(&ncc, "Comment"      , "/\\**\\*/", "/*besm Allah*/", True, 14, False);
+    assert(&ncc, "TwoComments"  , "${Comment},${Comment}", "/*first comment*/,/*second comment*/", True, 36, False);
+    assert(&ncc, "ThreeComments", "${TwoComments},${Comment}", "/*first comment*/,/*second comment*/,/*thirrrrrd comment*/", True, 58, True);
+    NCC_destroyNCC(&ncc);
+
+    NCC_initializeNCC(&ncc);
+    assert(&ncc, "Optional", "{ab}^*{cd}^*", "", True, 0, False);
+    assert(&ncc, "Mandatory", "xyz", "xyz", True, 3, False);
+    assert(&ncc, "ContainingOptional", "${Optional}${Mandatory}", "xyz", True, 3, True);
+    NCC_destroyNCC(&ncc);
+
+    NCC_initializeNCC(&ncc);
+    assert(&ncc, "Milestone", "", "", True, 0, False);
+    assert(&ncc, "123", "123", "123", True, 3, False);
+    assert(&ncc, "ActualRule1", "${123}${Milestone}${123}", "123123", True, 6, False);
+    assert(&ncc, "ActualRule2", "abc${ActualRule1}xyz", "abc123123xyz", True, 12, True);
+    NCC_destroyNCC(&ncc);
+
 //    NCC_initializeNCC(&ncc);
 //    assert(&ncc, "Literal"        ,             0, "\x01-\xff", "", False, 0);
 //    assert(&ncc, "String"         ,             0, "\" { ${Literal}|{\\\\${Literal}} }^* \"", "", False, 0);
@@ -311,9 +326,9 @@ void NMain() {
 //    NCC_destroyNCC(&ncc);
 
     // Stateful parsing,
-    NLOGI("", "%s================%s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
-    NLOGI("", "%sStateful Parsing%s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
-    NLOGI("", "%s================%s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
+    NLOGI("", "%s================%s"  , NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
+    NLOGI("", "%sStateful Parsing%s"  , NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
+    NLOGI("", "%s================%s\n", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
 
     struct NCC_RuleData ruleData;
     NCC_initializeRuleData(&ruleData, &ncc, "", "", 0, 0, 0);
@@ -326,11 +341,11 @@ void NMain() {
     NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode)); //validateAssignmentListener));
     NCC_addRule(ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
 
-    assert(&ncc, "DocumentTest1", 0, "${} Test1: ${document}", "\n"
+    assert(&ncc, "DocumentTest1", "Test1:${} ${document}",
             "Test1:\n"
             "var1;\n"
             "var2;\n"
-            "var1=var2;", True, 30, True);
+            "var1=var2;", True, 29, True);
     destroyDeclaredVariables();
 
 //
