@@ -467,7 +467,7 @@ struct OrNodeData {
 static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
     struct OrNodeData* nodeData = node->data;
 
-    // Match the sides on temporary routes,
+    // Match the sides on temporary stacks,
     // Right hand side,
     MatchTree(rhs, nodeData->rhsTree, text, parentNode, astNodeStacks[1], 0, {&rhs}, 1)
 
@@ -533,7 +533,7 @@ static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
     if (!rhsTreeMatched) rhsMatchLength = -100000000; // Since a match can be of a negative length, I used a number that's ridiculously small.
     if (!lhsTreeMatched) lhsMatchLength = -100000000;
 
-    // Push the correct temporary routes,
+    // Push the correct temporary stacks,
     NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
     if (rhsMatchLength > lhsMatchLength) {
         DiscardTree(&lhsTree)
@@ -547,7 +547,7 @@ static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
         PushTree(lhs)
     }
 
-    // Or nodes don't get pushed into the route,
+    // Or nodes don't get pushed into the stack,
     return True;
 }
 
@@ -616,7 +616,7 @@ struct SubRuleNodeData {
 static boolean subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
     struct SubRuleNodeData* nodeData = node->data;
 
-    // Match sub-rule on a temporary route,
+    // Match sub-rule on a temporary stack,
     MatchTree(subRule, nodeData->subRuleTree, text, parentNode, astNodeStacks[1], 0, {&subRule}, 1)
     if (!subRuleMatched) {
         *outResult = subRule.result;
@@ -632,7 +632,7 @@ static boolean subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const ch
         return False;
     }
 
-    // Push the sub-rule route,
+    // Push the sub-rule stack,
     PushTree(subRule)
 
     return True;
@@ -749,7 +749,7 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     // should be kept in a separate stack? This should sometimes terminate the repeats earlier than expected. Should
     // we do it at all? Maybe do it conditional, or using another operator (something other than the *) ?
 
-    // Following sub-rule didn't match, attempt repeating (on the temporary route),
+    // Following sub-rule didn't match, attempt repeating (on the temporary stack),
     MatchTree(repeatedNode, nodeData->repeatedNode, text, parentNode, astNodeStacks[1], 0, {&followingSubRule COMMA &repeatedNode}, 2)
     if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
         if (repeatedNodeMatched) DiscardTree(&repeatedNode)
@@ -774,7 +774,7 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
         return False;
     }
 
-    // Push the repeated node route,
+    // Push the repeated node,
     PushTree(repeatedNode)
     return True;
 }
@@ -946,10 +946,10 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     newAstNode.node = createASTNode ? createASTNode(newAstNode.rule, parentNode) : 0;
     boolean newAstNodeCreated = deleteAstNode = newAstNode.node != 0;
 
-    // Match rule on a temporary route,
+    // Match rule on a temporary stack,
     struct MatchedTree rule;
     accepted = matchTree(ncc, nodeData->rule->tree, text,
-                         &rule, &newAstNode, &ncc->astNodeStacks[1],
+                         &rule, newAstNodeCreated ? &newAstNode : parentNode, &ncc->astNodeStacks[1],
                          0, 0, 0);
     if (rule.result.terminate || !accepted) {
         *outResult = rule.result;
@@ -995,17 +995,24 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
                          &nextNode, parentNode, &ncc->astNodeStacks[0],
                          0, (struct MatchedTree*[]) {&nextNode}, 1);
     *outResult = nextNode.result;
-    outResult->matchLength += rule.result.matchLength;
-    if (nextNode.result.terminate || !accepted) goto finish;
+    if (nextNode.result.terminate || !accepted) {
+        outResult->matchLength += rule.result.matchLength;
+        goto finish;
+    }
 
     // Next node matched,
     discardRule = deleteAstNode = False;
+    if (newAstNodeCreated) {
+        // Remove child nodes without deleting them,
+        NVector.resize(*rule.astNodesStack, rule.stackMark);
 
-    // Remove rule nodes without deleting them,
-    NVector.resize(*rule.astNodesStack, rule.stackMark);
-
-    // Now push this node,
-    if (newAstNodeCreated) NVector.pushBack(ncc->astNodeStacks[0], &newAstNode);
+        // Push this node,
+        NVector.pushBack(ncc->astNodeStacks[0], &newAstNode);
+        outResult->matchLength += rule.result.matchLength;
+    } else {
+        // Push the child nodes into the primary stack,
+        PushTree(rule)
+    }
 
     finish:
     if (discardRule) DiscardTree(&rule)
@@ -1212,7 +1219,7 @@ void NCC_destroyNCC(struct NCC* ncc) {
     for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) destroyAndFreeRule(*((struct NCC_Rule**) NVector.get(&ncc->rules, i)));
     NVector.destroy(&ncc->rules);
 
-    // Routes,
+    // Stacks,
     for (int32_t i=0; i<NCC_AST_NODE_STACKS_COUNT; i++) NVector.destroyAndFree(ncc->astNodeStacks[i]);
 }
 
@@ -1317,12 +1324,13 @@ boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* 
 
         // Get the node and return it,
         if (outNode) {
+            // TODO: .... there could be more than one node on the stack...
             if (!NVector.popBack(ncc->astNodeStacks[0], outNode)) NSystemUtils.memset(outNode, 0, sizeof(struct NCC_ASTNode_Data));
         } else {
 
             // Delete the unused tree,
             struct NCC_ASTNode_Data tempNode;
-            if (NVector.popBack(ncc->astNodeStacks[0], &tempNode)) {
+            while (NVector.popBack(ncc->astNodeStacks[0], &tempNode)) {
                 NCC_deleteNodeListener deleteListener = tempNode.rule->deleteNodeListener;
                 if (deleteListener) deleteListener(&tempNode, 0);
             }
