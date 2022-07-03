@@ -95,7 +95,7 @@ void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* 
 
 void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* parentNode) {
 
-    //NLOGI("sdf", "Delete node (%d): %s", ++deleteCount, NString.get(&astNode->value));
+    //NLOGI("sdf", "Delete node (%d) %s: %s", ++deleteCount, NString.get(&astNode->name), NString.get(&astNode->value));
 
     // Destroy members,
     NString.destroy(&astNode->name);
@@ -319,11 +319,12 @@ void NMain() {
     assert(&ncc, "ActualRule2", "abc${ActualRule1}xyz", "abc123123xyz", True, 12, True);
     NCC_destroyNCC(&ncc);
 
-//    NCC_initializeNCC(&ncc);
-//    assert(&ncc, "Literal"        ,             0, "\x01-\xff", "", False, 0);
-//    assert(&ncc, "String"         ,             0, "\" { ${Literal}|{\\\\${Literal}} }^* \"", "", False, 0);
-//    assert(&ncc, "StringContainer", printListener, "${String}", "\"besm Allah \\\" :)\"", True, 18);
-//    NCC_destroyNCC(&ncc);
+    NCC_initializeNCC(&ncc);
+    assert(&ncc, "Literal"        , "\x01-\xff", "", False, 0, False);
+    assert(&ncc, "EscapedLiteral" , "\\\\${Literal}", "", False, 0, False);
+    assert(&ncc, "String"         , "\" { ${Literal}|${EscapedLiteral} }^* \"", "", False, 0, False);
+    assert(&ncc, "StringContainer", "${String}", "\"besm Allah \\\" :)\"", True, 18, True);
+    NCC_destroyNCC(&ncc);
 
     // Stateful parsing,
     NLOGI("", "%s================%s"  , NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));

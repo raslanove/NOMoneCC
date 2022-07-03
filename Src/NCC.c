@@ -1170,6 +1170,7 @@ static boolean matchTree(
         int32_t lengthToAddIfTerminated, struct MatchedTree** treesToDiscardIfTerminated, int32_t treesToDiscardCount) {
 
     // Match,
+    matchingResult->parentNode = parentNode;
     matchingResult->astNodesStack = stack;
     matchingResult->stackMark = NVector.size(*stack);
     switchStacks(&ncc->astNodeStacks[0], stack);
