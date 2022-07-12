@@ -1354,6 +1354,7 @@ void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* 
     NString.initialize(&astNode->name, "%s", NString.get(&ruleData->ruleName));
     NString.initialize(&astNode->value, "not set yet");
     NVector.initialize(&astNode->childNodes, 0, sizeof(struct NCC_ASTNode*));
+    astNode->rule = ruleData;
 
     if (parentNode) {
         struct NCC_ASTNode* parentASTNode = parentNode->node;
@@ -1362,7 +1363,7 @@ void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* 
     return astNode;
 }
 
-static void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* parentNode) {
+static inline void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* parentNode) {
 
     //NLOGI("sdf", "Delete node (%d) %s: %s", ++deleteCount, NString.get(&astNode->name), NString.get(&astNode->value));
 
@@ -1372,7 +1373,21 @@ static void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* 
 
     // Delete children,
     struct NCC_ASTNode* currentChild;
-    while (NVector.popBack(&astNode->childNodes, &currentChild)) deleteASTNode(currentChild, 0);
+    while (NVector.popBack(&astNode->childNodes, &currentChild)) {
+        if (currentChild->rule->deleteNodeListener == NCC_deleteASTNode) {
+            // Using the generic listener,
+            deleteASTNode(currentChild, 0); // Needn't remove from parent because parent is dying anyway.
+        } else {
+            // Has a user-defined listener,
+            struct NCC_ASTNode_Data nodeData;
+            nodeData.node = currentChild;
+            nodeData.rule = currentChild->rule;
+            struct NCC_ASTNode_Data parentNodeData;
+            parentNodeData.node = astNode;
+            parentNodeData.rule = astNode->rule;
+            currentChild->rule->deleteNodeListener(&nodeData, &parentNodeData);
+        }
+    }
     NVector.destroy(&astNode->childNodes);
 
     // Delete node,
@@ -1421,6 +1436,8 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
         childrenPrefix = NString.create("");
     }
     const char* childrenPrefixCString = NString.get(childrenPrefix);
+
+    // TODO: trim trailing whitespaces?
 
     // Tree value could span multiple lines, remove line-breaks,
     int32_t childrenCount = NVector.size(&tree->childNodes);

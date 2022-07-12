@@ -68,6 +68,8 @@ boolean printListener(struct NCC_MatchingData* matchingData) {
 // Variable manipulation
 //////////////////////////////////////
 
+// TODO: turn into separates files, symbolTable.c and symbolTable.h...
+
 struct NVector declaredVariables;
 
 void addDeclaredVariable(const char* variableName) {
@@ -77,8 +79,9 @@ void addDeclaredVariable(const char* variableName) {
 
 boolean removeDeclaredVariable(const char* variableName) {
     for (int32_t i=NVector.size(&declaredVariables)-1; i>-1; i--) {
-        const char* currentVariableName = NString.get(NVector.get(&declaredVariables, i));
-        if (NCString.equals(variableName, currentVariableName)) {
+        struct NString* currentVariableName = NVector.get(&declaredVariables, i);
+        if (NCString.equals(variableName, NString.get(currentVariableName))) {
+            NString.destroy(currentVariableName);
             NVector.remove(&declaredVariables, i);
             return True;
         }
@@ -107,8 +110,8 @@ boolean declarationListener(struct NCC_MatchingData* matchingData) {
 
     // Get the variable name from the identifier child,
     struct NCC_ASTNode* astNode = matchingData->node.node;
-    struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 0));
-    NLOGE("sdf", "Child: name: %s, value: %s", NString.get(&childNode->name), NString.get(&childNode->value));
+    struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.getLast(&astNode->childNodes));
+    NLOGI(0, "%sDeclare:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(&childNode->value));
     addDeclaredVariable(NString.get(&childNode->value));
     return True;
 }
@@ -118,8 +121,8 @@ void undoDeclarationListener(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_D
     // Get the variable name from the identifier child (if any),
     struct NCC_ASTNode* astNode = node->node;
     if (NVector.size(&astNode->childNodes)) {
-        struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 0));
-        NLOGE("sdf", "Child: name: %s, value: %s", NString.get(&childNode->name), NString.get(&childNode->value));
+        struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.getLast(&astNode->childNodes));
+        NLOGI(0, "%sUndeclare:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(&childNode->value));
         removeDeclaredVariable(NString.get(&childNode->value));
     }
 
@@ -128,16 +131,22 @@ void undoDeclarationListener(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_D
 
 boolean validateAssignmentListener(struct NCC_MatchingData* matchingData) {
 
-    // TODO: ....
+    // Get the two identifier children,
+    struct NCC_ASTNode* astNode = matchingData->node.node;
+    struct NCC_ASTNode*  leftChildNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 0));
+    struct NCC_ASTNode* rightChildNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 1));
 
-    /*
+    NLOGI(0, "%sAssignment  left:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(& leftChildNode->value));
+    NLOGI(0, "%sAssignment right:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(&rightChildNode->value));
+
     // Accept rule only if the two variable were previously declared,
-    boolean declared = isVariableDeclared(NString.get(&variable.value));
+    boolean declared;
+    declared = isVariableDeclared(NString.get(& leftChildNode->value));
     if (!declared) return False;
-    declared = isVariableDeclared(NString.get(&variable.value));
+    declared = isVariableDeclared(NString.get(&rightChildNode->value));
+
+    if (declared) NCC_matchASTNode(matchingData);
     return declared;
-    */
-    return True;
 }
 
 //////////////////////////////////////
@@ -152,10 +161,10 @@ void NMain() {
     struct NCC ncc;
 
     // Literals,
-    assert(0, 0, "besm\\ Allah", "besm Allah", True, 10, True);
+    assert(0, 0, "besm\\ Allah", "besm Allah", True, 10, False);
 
     // x-y
-    assert(0, 0, "besm\\ Allah\\ a-z", "besm Allah x", True, 12, True);
+    assert(0, 0, "besm\\ Allah\\ a-z", "besm Allah x", True, 12, False);
     assert(0, 0, "besm\\ Allah\\ a-z", "besm Allah 2", False, 11, False);
     assert(0, 0, "besm\\ Allah\\ \\a-\\z", "besm Allah x", True, 12, False);
 
@@ -168,42 +177,42 @@ void NMain() {
 
     // {}
     assert(0, 0, "ab{cd{ef}gh}ij", "abcdefghij", True, 10, False);
-//    assert(0, 0, 0, "ab{cd}|{ef}gh", "abcdgh", True, 6);
-//    assert(0, 0, 0, "ab{cd}|{ef}gh", "abefgh", True, 6);
-//    assert(0, 0, 0, "ab{cd}|{ef}gh", "abgh", False, 2);
-//    assert(0, 0, 0, "a{a|b}", "ab", True, 2);
-//    assert(0, 0, 0, "a{b|c}d", "abf", False, 2);
-//
-//    // ^*
-//    assert(0, 0, 0, "a^*bc", "abc", True, 3);
-//    assert(0, 0, 0, "a^*bc", "bc", True, 2);
-//    assert(0, 0, 0, "a^*bc", "aaaaabc", True, 7);
-//    assert(0, 0, 0, "a^*", "aaaaa", True, 5);
-//    assert(0, 0, 0, "123a^*", "123aaaaa", True, 8);
-//    assert(0, 0, 0, "123a^*456", "123a456", True, 7);
-//    assert(0, 0, 0, "123a^*456", "123456", True, 6);
-//    assert(0, 0, 0, "123{ab}^*456", "123ababab456", True, 12);
-//    assert(0, 0, 0, "{ab}^*{cd}^*", "x", True, 0);
-//    assert(0, 0, 0, "x{ab}^*{cd}^*", "x", True, 1);
-//    assert(0, 0, 0, "x{ab}^*{cd}^*", "xab", True, 3);
-//    assert(0, 0, 0, "x{ab}^*{cd}^*", "xcd", True, 3);
-//    assert(0, 0, 0, "{xyz}^*xyz", "xyzxyzxyz", True, 3);
-//    assert(0, 0, 0, "{{xyz}^*}xyz", "xyzxyzxyz", False, 9);
-//
-//    // *
-//    assert(0, 0, 0, "*", "xyz", True, 3);
-//    assert(0, 0, 0, "**", "xyz", True, 3);
-//    assert(0, 0, 0, "********", "xyz", True, 3);
-//    assert(0, 0, 0, "********abc", "xyzabc", True, 6);
-//    assert(0, 0, 0, "*a*b*c*", "__a__c__", False, 8);
-//    assert(0, 0, 0, "*XYZ", "abcdefgXYZ", True, 10);
-//    assert(0, 0, 0, "{*}XYZ", "abcdefgXYZ", False, 10);
-//
-//    // General test-cases,
-//    assert(0, 0, 0, "{a-z|A-Z}{a-z|A-Z|0-9}^*", "myVariable3", True, 11);
-//    assert(0, 0, 0, "{a-z|A-Z}{a-z|A-Z|0-9}^*", "3myVariable3", False, 0);
-//    assert(0, 0, 0, "/\\**\\*/", "/*بسم الله. This is a beautiful comment.\n The is the second line in the beautiful comment.*/", True, 99);
-//
+    assert(0, 0, "ab{cd}|{ef}gh", "abcdgh", True, 6, False);
+    assert(0, 0, "ab{cd}|{ef}gh", "abefgh", True, 6, False);
+    assert(0, 0, "ab{cd}|{ef}gh", "abgh", False, 2, False);
+    assert(0, 0, "a{a|b}", "ab", True, 2, False);
+    assert(0, 0, "a{b|c}d", "abf", False, 2, False);
+
+    // ^*
+    assert(0, 0, "a^*bc", "abc", True, 3, False);
+    assert(0, 0, "a^*bc", "bc", True, 2, False);
+    assert(0, 0, "a^*bc", "aaaaabc", True, 7, False);
+    assert(0, 0, "a^*", "aaaaa", True, 5, False);
+    assert(0, 0, "123a^*", "123aaaaa", True, 8, False);
+    assert(0, 0, "123a^*456", "123a456", True, 7, False);
+    assert(0, 0, "123a^*456", "123456", True, 6, False);
+    assert(0, 0, "123{ab}^*456", "123ababab456", True, 12, False);
+    assert(0, 0, "{ab}^*{cd}^*", "x", True, 0, False);
+    assert(0, 0, "x{ab}^*{cd}^*", "x", True, 1, False);
+    assert(0, 0, "x{ab}^*{cd}^*", "xab", True, 3, False);
+    assert(0, 0, "x{ab}^*{cd}^*", "xcd", True, 3, False);
+    assert(0, 0, "{xyz}^*xyz", "xyzxyzxyz", True, 3, False);
+    assert(0, 0, "{{xyz}^*}xyz", "xyzxyzxyz", False, 9, False);
+
+    // *
+    assert(0, 0, "*", "xyz", True, 3, False);
+    assert(0, 0, "**", "xyz", True, 3, False);
+    assert(0, 0, "********", "xyz", True, 3, False);
+    assert(0, 0, "********abc", "xyzabc", True, 6, False);
+    assert(0, 0, "*a*b*c*", "__a__c__", False, 8, False);
+    assert(0, 0, "*XYZ", "abcdefgXYZ", True, 10, False);
+    assert(0, 0, "{*}XYZ", "abcdefgXYZ", False, 10, False);
+
+    // General test-cases,
+    assert(0, 0, "{a-z|A-Z}{a-z|A-Z|0-9}^*", "myVariable3", True, 11, False);
+    assert(0, 0, "{a-z|A-Z}{a-z|A-Z|0-9}^*", "3myVariable3", False, 0, False);
+    assert(0, 0, "/\\**\\*/", "/*بسم الله. This is a beautiful comment.\n The is the second line in the beautiful comment.*/", True, 99, False);
+
     // Substitute,
     NCC_initializeNCC(&ncc);
     assert(&ncc, "Comment"      , "/\\**\\*/", "/*besm Allah*/", True, 14, False);
@@ -242,34 +251,35 @@ void NMain() {
 
     NCC_initializeNCC(&ncc);
     NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
-    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")         ->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
-    NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
-    NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode)); //validateAssignmentListener));
-    NCC_addRule(ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")         ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode,           NCC_matchASTNode));
+    NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener,        declarationListener));
+    NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode, validateAssignmentListener));
+    NCC_addRule(ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode,           NCC_matchASTNode));
 
-    assert(&ncc, "DocumentTest1", "Test1:${} ${document}",
+    assert(&ncc, "AssignmentTest", "Test1:${} ${document}",
             "Test1:\n"
             "var1;\n"
             "var2;\n"
             "var1=var2;", True, 29, True);
     destroyDeclaredVariables();
-
-//
-//    assert(&ncc, "DocumentTest2", printListener, True, "${} Test2: ${document}", "\n"
-//            "Test2:\n"
-//            "var1;\n"
-//            "var2;\n"
-//            "var1=var3;", True, 20);
+    NLOGI("", "");
+    assert(&ncc, "FailedAssignmentTest", "Test2:${} ${document}",
+            "Test2:\n"
+            "var1;\n"
+            "var2;\n"
+            "var1=var3;", True, 19, True);
     destroyDeclaredVariables();
     NCC_destroyNCC(&ncc);
-//
-//    // Delete test,
-//    NCC_initializeNCC(&ncc);
-//    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
-//    NCC_addRule(ruleData.set(&ruleData, "identifier"    , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*"));
-//    NCC_addRule(ruleData.set(&ruleData, "declaration"   , "${identifier} ${} ${identifier};")->setListeners(&ruleData, 0, rollBackListener, 0));
-//    assert(&ncc, "RollBackTest", printListener, True, "${declaration}|${declaration}", "int a;", True, 6);
-//    NCC_destroyNCC(&ncc);
+    NLOGI("", "");
+
+    // Delete test,
+    NCC_initializeNCC(&ncc);
+    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
+    NCC_addRule(ruleData.set(&ruleData, "identifier"    , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*"));
+    NCC_addRule(ruleData.set(&ruleData, "declaration"   , "${identifier} ${} ${identifier};")->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
+    assert(&ncc, "RollBackTest", "${declaration}|${declaration}", "int a;", True, 6, True);
+    NCC_destroyNCC(&ncc);
+    NLOGI("", "");
 
     NVector.destroy(&declaredVariables);
     NCC_destroyRuleData(&ruleData);

@@ -135,6 +135,7 @@ boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* 
 struct NCC_ASTNode {
     struct NString name, value;
     struct NVector childNodes;
+    struct NCC_RuleData* rule;
     void* extraData;
 };
 
