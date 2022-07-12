@@ -9,12 +9,6 @@
 // Testing helper functions
 //////////////////////////////////////
 
-struct NCC_ASTNode;
-void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString);
-void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode);
-void  NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
-boolean NCC_matchASTNode(struct NCC_MatchingData* matchingData);
-
 void assert(struct NCC* ncc, const char*ruleName, const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength, boolean logTree) {
 
     boolean nccNeedsDeletion = False;
@@ -71,135 +65,25 @@ boolean printListener(struct NCC_MatchingData* matchingData) {
 // Conditional acceptance test
 //////////////////////////////////////
 
-struct NCC_ASTNode {
-    struct NString name, value;
-    struct NVector childNodes;
-};
-
-int32_t createCount=0, deleteCount=0;
-void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode) {
-
-    //NLOGI("sdf", "Create Node (%d): %s", ++createCount, NString.get(&ruleData->ruleName));
-
-    struct NCC_ASTNode* astNode = NMALLOC(sizeof(struct NCC_ASTNode), "NCC.NCC_createASTNode() astNode");
-    NString.initialize(&astNode->name, "%s", NString.get(&ruleData->ruleName));
-    NString.initialize(&astNode->value, "not set yet");
-    NVector.initialize(&astNode->childNodes, 0, sizeof(struct NCC_ASTNode*));
-
-    if (parentNode) {
-        struct NCC_ASTNode* parentASTNode = parentNode->node;
-        NVector.pushBack(&parentASTNode->childNodes, &astNode);
-    }
-    return astNode;
-}
-
-void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* parentNode) {
-
-    //NLOGI("sdf", "Delete node (%d) %s: %s", ++deleteCount, NString.get(&astNode->name), NString.get(&astNode->value));
-
-    // Destroy members,
-    NString.destroy(&astNode->name);
-    NString.destroy(&astNode->value);
-
-    // Delete children,
-    struct NCC_ASTNode* currentChild;
-    while (NVector.popBack(&astNode->childNodes, &currentChild)) deleteASTNode(currentChild, 0);
-    NVector.destroy(&astNode->childNodes);
-
-    // Delete node,
-    NFREE(astNode, "NCC.NCC_deleteASTNode() astNode");
-
-    // Remove from parent (if any),
-    if (parentNode) {
-        struct NCC_ASTNode* parentASTNode = parentNode->node;
-        int32_t nodeIndex = NVector.getFirstInstanceIndex(&parentASTNode->childNodes, &astNode);
-        if (nodeIndex!=-1) NVector.remove(&parentASTNode->childNodes, nodeIndex);
-    }
-}
-
-void NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode) {
-    deleteASTNode((struct NCC_ASTNode*) node->node, parentNode);
-}
-
-boolean NCC_matchASTNode(struct NCC_MatchingData* matchingData) {
-    struct NCC_ASTNode* astNode = matchingData->node.node;
-    NString.set(&astNode->value, "%s", matchingData->matchedText);
-    return True;
-}
-
-void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString) {
-
-    // 179 = │, 192 = └ , 195 = ├. But somehow, this doesn't work. Had to use unicode...?
-
-    boolean lastChild;
-
-    // Prepare children prefix from the initial one,
-    struct NString* childrenPrefix;
-    if (prefix) {
-        const char* prefixCString = NString.get(prefix);
-        lastChild = NCString.contains(prefixCString, "└");
-
-        struct NString* temp1 = NString.replace(prefixCString, "─", " ");
-        struct NString* temp2 = NString.replace(NString.get(temp1 ), "├", "│");
-        NString.destroyAndFree(temp1);
-        childrenPrefix = NString.replace(NString.get(temp2), "└", " ");
-        NString.destroyAndFree(temp2);
-
-        // First line uses the plain old prefix,
-        NString.append(outString, "%s", prefixCString);
-    } else {
-        lastChild = False;
-        childrenPrefix = NString.create("");
-    }
-    const char* childrenPrefixCString = NString.get(childrenPrefix);
-
-    // Tree value could span multiple lines, remove line-breaks,
-    int32_t childrenCount = NVector.size(&tree->childNodes);
-    boolean containsLineBreak = NCString.contains(NString.get(&tree->value), "\n");
-    if (containsLineBreak) {
-        struct NString  temp1;
-        struct NString *temp2;
-        NString.initialize(&temp1, "\n%s%s", childrenPrefixCString, childrenCount ? "│" : " ");
-        temp2 = NString.replace(NString.get(&tree->value), "\n", NString.get(&temp1));
-        NString.append(outString, "%s:%s%s%s\n", NString.get(&tree->name), NString.get(&temp1), NString.get(temp2), NString.get(&temp1));
-        NString.destroy(&temp1);
-        NString.destroyAndFree(temp2);
-    } else {
-        NString.append(outString, "%s: %s\n", NString.get(&tree->name), NString.get(&tree->value));
-    }
-
-    // Print children,
-    struct NString childPrefix;
-    NString.initialize(&childPrefix, "");
-    for (int32_t i=0; i<childrenCount; i++) {
-        boolean lastChild = (i==(childrenCount-1));
-        NString.set(&childPrefix, "%s%s", childrenPrefixCString, lastChild ? "└─" : "├─");
-        struct NCC_ASTNode* currentChild = *((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i));
-        NCC_ASTTreeToString(currentChild, &childPrefix, outString);
-    }
-
-    // Extra line break if this was the last child of its parent,
-    boolean containsContinuation = NCString.contains(childrenPrefixCString, "│");
-    if (lastChild && !containsLineBreak && containsContinuation) NString.append(outString, "%s\n", childrenPrefixCString);
-
-    NString.destroyAndFree(childrenPrefix);
-    NString.destroy(&childPrefix);
-}
-
-// TODO: print tree ....
-//    tree node
-//    ├─── tree node
-//    │     ├─── tree node
-//    │     └─── tree node
-//    └─── tree node
-
-
+// Variable manipulation
+//////////////////////////////////////
 
 struct NVector declaredVariables;
 
 void addDeclaredVariable(const char* variableName) {
     struct NString* declaredVariable = NVector.emplaceBack(&declaredVariables);
     NString.initialize(declaredVariable, "%s", variableName);
+}
+
+boolean removeDeclaredVariable(const char* variableName) {
+    for (int32_t i=NVector.size(&declaredVariables)-1; i>-1; i--) {
+        const char* currentVariableName = NString.get(NVector.get(&declaredVariables, i));
+        if (NCString.equals(variableName, currentVariableName)) {
+            NVector.remove(&declaredVariables, i);
+            return True;
+        }
+    }
+    return False;
 }
 
 boolean isVariableDeclared(const char* variableName) {
@@ -215,10 +99,31 @@ void destroyDeclaredVariables() {
     NVector.clear(&declaredVariables);
 }
 
+// Listeners
+//////////////////////////////////////
+
 boolean declarationListener(struct NCC_MatchingData* matchingData) {
-    // TODO: ....
-    //addDeclaredVariable(NString.get(&variable.value));
+    NCC_matchASTNode(matchingData);
+
+    // Get the variable name from the identifier child,
+    struct NCC_ASTNode* astNode = matchingData->node.node;
+    struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 0));
+    NLOGE("sdf", "Child: name: %s, value: %s", NString.get(&childNode->name), NString.get(&childNode->value));
+    addDeclaredVariable(NString.get(&childNode->value));
     return True;
+}
+
+void undoDeclarationListener(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode) {
+
+    // Get the variable name from the identifier child (if any),
+    struct NCC_ASTNode* astNode = node->node;
+    if (NVector.size(&astNode->childNodes)) {
+        struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 0));
+        NLOGE("sdf", "Child: name: %s, value: %s", NString.get(&childNode->name), NString.get(&childNode->value));
+        removeDeclaredVariable(NString.get(&childNode->value));
+    }
+
+    NCC_deleteASTNode(node, parentNode);
 }
 
 boolean validateAssignmentListener(struct NCC_MatchingData* matchingData) {
@@ -338,7 +243,7 @@ void NMain() {
     NCC_initializeNCC(&ncc);
     NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
     NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")         ->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
-    NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
     NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode)); //validateAssignmentListener));
     NCC_addRule(ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
 

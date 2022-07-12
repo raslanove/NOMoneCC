@@ -127,3 +127,19 @@ boolean NCC_addRule(struct NCC_RuleData* ruleData);
 boolean NCC_updateRule(struct NCC_RuleData* ruleData);
 boolean NCC_setRootRule(struct NCC* ncc, const char* ruleName);
 boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult, struct NCC_ASTNode_Data* outNode); // Returns True if matched. Sets outResult and outNode.
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Generic AST construction methods
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct NCC_ASTNode {
+    struct NString name, value;
+    struct NVector childNodes;
+    void* extraData;
+};
+
+void*   NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode);
+void    NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
+boolean NCC_matchASTNode (struct NCC_MatchingData* matchingData);
+
+void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString);
