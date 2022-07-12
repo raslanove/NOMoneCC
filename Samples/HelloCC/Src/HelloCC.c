@@ -274,9 +274,10 @@ void NMain() {
 
     // Delete test,
     NCC_initializeNCC(&ncc);
-    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
-    NCC_addRule(ruleData.set(&ruleData, "identifier"    , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*"));
-    NCC_addRule(ruleData.set(&ruleData, "declaration"   , "${identifier} ${} ${identifier};")->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
+    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*")->setListeners(&ruleData, 0, 0, 0));
+    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(ruleData.set(&ruleData, "specifier"  , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(ruleData.set(&ruleData, "declaration", "${specifier} ${} ${identifier};")->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
     assert(&ncc, "RollBackTest", "${declaration}|${declaration}", "int a;", True, 6, True);
     NCC_destroyNCC(&ncc);
     NLOGI("", "");
