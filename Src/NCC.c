@@ -1437,8 +1437,6 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
     }
     const char* childrenPrefixCString = NString.get(childrenPrefix);
 
-    // TODO: trim trailing whitespaces?
-
     // Tree value could span multiple lines, remove line-breaks,
     int32_t childrenCount = NVector.size(&tree->childNodes);
     boolean containsLineBreak = NCString.contains(NString.get(&tree->value), "\n");
@@ -1447,7 +1445,9 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
         struct NString *temp2;
         NString.initialize(&temp1, "\n%s%s", childrenPrefixCString, childrenCount ? "│" : " ");
         temp2 = NString.replace(NString.get(&tree->value), "\n", NString.get(&temp1));
-        NString.append(outString, "%s:%s%s%s\n", NString.get(&tree->name), NString.get(&temp1), NString.get(temp2), NString.get(&temp1));
+        NString.append(outString, "%s:%s%s", NString.get(&tree->name), NString.get(&temp1), NString.get(temp2));
+        if (!NCString.endsWith(NString.get(temp2), "│")) NString.append(outString, "%s", NString.get(&temp1));
+        NString.append(outString, "\n");
         NString.destroy(&temp1);
         NString.destroyAndFree(temp2);
     } else {
@@ -1466,7 +1466,10 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
 
     // Extra line break if this was the last child of its parent,
     boolean containsContinuation = NCString.contains(childrenPrefixCString, "│");
-    if (lastChild && !containsLineBreak && containsContinuation) NString.append(outString, "%s\n", childrenPrefixCString);
+    if (lastChild && !containsLineBreak && containsContinuation) {
+        NString.trimEnd(childrenPrefix, " ");
+        if (!NCString.endsWith(NString.get(outString), "│\n")) NString.append(outString, "%s\n", childrenPrefixCString);
+    }
 
     NString.destroyAndFree(childrenPrefix);
     NString.destroy(&childPrefix);

@@ -8,17 +8,15 @@
 #define TEST_DECLARATIONS 1
 #define TEST_STATEMENTS   1
 
-void printListener(struct NCC_MatchingData* matchingData) {
-    NLOGI("", "ruleName: %s, variablesCount: %d", NString.get(&matchingData->ruleData->ruleName), matchingData->variablesCount);
-    struct NCC_Variable variable;
-    while (NCC_popRuleVariable(matchingData->ruleData->ncc, &variable)) {
-        NLOGI("", "            Name: %s%s%s, Value: %s%s%s", NTCOLOR(HIGHLIGHT), variable.name, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&variable.value), NTCOLOR(STREAM_DEFAULT));
-        NCC_destroyVariable(&variable);
-    }
+boolean printListener(struct NCC_MatchingData* matchingData) {
+    NLOGI("HelloCC", "ruleName: %s", NString.get(&matchingData->node.rule->ruleName));
+    NLOGI("HelloCC", "        Match length: %s%d%s", NTCOLOR(HIGHLIGHT), matchingData->matchLength, NTCOLOR(STREAM_DEFAULT));
+    NLOGI("HelloCC", "        Matched text: %s%s%s", NTCOLOR(HIGHLIGHT), matchingData->matchedText, NTCOLOR(STREAM_DEFAULT));
+    return True;
 }
 
 boolean rejectingPrintListener(struct NCC_MatchingData* matchingData) {
-    printListener(matchingData);
+    //printListener(matchingData);
     return False;
 }
 
@@ -69,11 +67,11 @@ void defineLanguage(struct NCC* ncc) {
     //       ${} could necessary for code coloring, and not for compiling. This should be more obvious
     //       upon implementation.
 
-    struct NCC_RuleData plainRuleData, pushingRuleData, rootRuleData, specialRuleData;
-    NCC_initializeRuleData(&  plainRuleData, ncc, "", "", 0, 0,             0, False, False, False);
-    NCC_initializeRuleData(&pushingRuleData, ncc, "", "", 0, 0,             0, False,  True, False);
-    NCC_initializeRuleData(&   rootRuleData, ncc, "", "", 0, 0, printListener,  True, False, False);
-    NCC_initializeRuleData(&specialRuleData, ncc, "", "", 0, 0, printListener,  False, False, False);
+    struct NCC_RuleData plainRuleData, pushingRuleData, printRuleData, specialRuleData;
+    NCC_initializeRuleData(&  plainRuleData, ncc, "", "",                 0,                 0,                0);
+    NCC_initializeRuleData(&pushingRuleData, ncc, "", "", NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode);
+    NCC_initializeRuleData(&  printRuleData, ncc, "", "",                 0,                 0,    printListener);
+    NCC_initializeRuleData(&specialRuleData, ncc, "", "",                 0,                 0,    printListener);
 
     // =====================================
     // Lexical rules,
@@ -532,7 +530,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Typedef name,
     // ...XXX
-    NCC_updateRule(specialRuleData.setListeners(&specialRuleData, rejectingPrintListener, 0, 0)->set(&specialRuleData, "typedef-name",
+    NCC_updateRule(specialRuleData.setListeners(&specialRuleData, 0, 0, rejectingPrintListener)->set(&specialRuleData, "typedef-name",
                    "${identifier}"));
 
     // Initializer,
@@ -663,7 +661,7 @@ void defineLanguage(struct NCC* ncc) {
                    "}^*"));
 
     // Test document,
-    NCC_addRule   (   rootRuleData.set(&   rootRuleData, "testDocument",
+    NCC_addRule   (pushingRuleData.set(&pushingRuleData, "TestDocument",
             "${primary-expression}        | "
             "${postfix-expression}        | "
             "${unary-expression}          | "
@@ -684,11 +682,12 @@ void defineLanguage(struct NCC* ncc) {
             "${constant-expression}       | "
             "${declaration}               | "
             "${translation-unit}"));
+    NCC_setRootRule(ncc, "TestDocument");
 
     // Cleanup,
     NCC_destroyRuleData(&  plainRuleData);
     NCC_destroyRuleData(&pushingRuleData);
-    NCC_destroyRuleData(&   rootRuleData);
+    NCC_destroyRuleData(&  printRuleData);
     NCC_destroyRuleData(&specialRuleData);
 }
 
@@ -696,7 +695,16 @@ static void test(struct NCC* ncc, const char* code) {
 
     NLOGI("", "%sTesting: %s%s", NTCOLOR(GREEN_BRIGHT), NTCOLOR(HIGHLIGHT), code);
     struct NCC_MatchingResult matchingResult;
-    boolean matched = NCC_match(ncc, code, &matchingResult);
+    struct NCC_ASTNode_Data tree;
+    boolean matched = NCC_match(ncc, code, &matchingResult, &tree);
+    if (matched && tree.node) {
+        struct NString treeString;
+        NString.initialize(&treeString, "");
+        NCC_ASTTreeToString(tree.node, 0, &treeString);
+        NLOGI(0, "%s", NString.get(&treeString));
+        NString.destroy(&treeString);
+        NCC_deleteASTNode(&tree, 0);
+    }
     int32_t codeLength = NCString.length(code);
     if (matched && matchingResult.matchLength == codeLength) {
         NLOGI("test()", "Success!");
