@@ -5,3 +5,8 @@
 /////////////////////////////////////////////////////////
 
 #pragma once
+
+struct NCC;
+
+void definePreprocessing(struct NCC* ncc);
+void defineLanguage(struct NCC* ncc);
