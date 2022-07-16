@@ -4,8 +4,8 @@
 
 #include <NCC.h>
 
-#define TEST_EXPRESSIONS  1
-#define TEST_DECLARATIONS 1
+#define TEST_EXPRESSIONS  0
+#define TEST_DECLARATIONS 0
 #define TEST_STATEMENTS   1
 
 boolean printListener(struct NCC_MatchingData* matchingData) {
@@ -234,10 +234,10 @@ void defineLanguage(struct NCC* ncc) {
                 "}^*"));
 
     // Additive expression,
+    NCC_addRule   (pushingRuleData.set(&pushingRuleData, "additive-operator", "+ | \\-"));
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "additive-expression",
                 "${multiplicative-expression} {"
-                "   { ${}   + ${} ${multiplicative-expression}} | "
-                "   { ${} \\- ${} ${multiplicative-expression}}"
+                "   ${} ${additive-operator} ${} ${multiplicative-expression}"
                 "}^*"));
 
     // Shift expression,
@@ -334,7 +334,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "type-qualifier", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "function-specifier", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "alignment-specifier", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "declaration-specifiers",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "declaration-specifiers",
                    "${storage-class-specifier} | "
                    "${type-specifier} | "
                    "${type-qualifier} | "
@@ -495,8 +495,8 @@ void defineLanguage(struct NCC* ncc) {
                    "}^*"));
 
     // Parameter declaration,
-    NCC_addRule   (  plainRuleData.set(&  plainRuleData, "abstract-declarator", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "parameter-declaration",
+    NCC_addRule   (pushingRuleData.set(&pushingRuleData, "abstract-declarator", "STUB!"));
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "parameter-declaration",
                    "${declaration-specifiers} ${} ${declarator}|${abstract-declarator}|${ε}"));
 
     // Identifier list,
@@ -594,8 +594,8 @@ void defineLanguage(struct NCC* ncc) {
                    "{default                         ${} : ${} ${statement}}"));
 
     // Compound statement,
-    NCC_addRule   (  plainRuleData.set(&  plainRuleData, "block-item-list", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "compound-statement",
+    NCC_addRule   (pushingRuleData.set(&pushingRuleData, "block-item-list", "STUB!"));
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "compound-statement",
                    "\\{ ${} ${block-item-list}|${ε} ${} \\}"));
 
     // Block item list,
@@ -776,6 +776,7 @@ void NMain() {
                "    int a = 3 + 5;\n"
                "}");
 
+    /*
     // A fake example that avoids the type-def issues,
     test(&ncc, "\n"
                "void variadicFunction(int firstArgument, ...) {\n"
@@ -795,6 +796,7 @@ void NMain() {
                "   int a ,b, c;\n"
                "   c = a ++ + ++ b;\n"
                "}");
+    */
     #endif
 
     // Clean up,
