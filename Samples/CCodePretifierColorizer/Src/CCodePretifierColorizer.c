@@ -9,6 +9,39 @@
 #define TEST_DECLARATIONS 0
 #define TEST_STATEMENTS   1
 
+static void printLeavesImplementation(struct NCC_ASTNode* tree, struct NString* outString, struct NString* extraString) {
+    // This way the extra string needn't be re-allocated and initialized with every invocation.
+
+    const char* ruleNameCString = NString.get(&tree->name );
+    const char*    valueCString = NString.get(&tree->value);
+
+    if (NCString.equals(ruleNameCString, "white-space")) {
+        // Reduce this to a single white-space,
+        NString.append(outString, " ");
+    } else if (NCString.equals(ruleNameCString, "OB")) {
+        NString.append(outString, "{\n");
+    } else {
+        int32_t childrenCount = NVector.size(&tree->childNodes);
+        if (childrenCount) {
+            // Not a leaf,
+            for (int32_t i=0; i<childrenCount; i++) {
+                printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), outString, extraString);
+            }
+        } else {
+            // Leaf node,
+            NString.append(outString, "%s", valueCString);
+        }
+    }
+}
+
+static void printLeaves(struct NCC_ASTNode* tree, struct NString* outString) {
+
+    struct NString extraString;
+    NString.initialize(&extraString, "");
+    printLeavesImplementation(tree, outString, &extraString);
+    NString.destroy(&extraString);
+}
+
 static void test(struct NCC* ncc, const char* code) {
 
     NLOGI("", "%sTesting: %s%s", NTCOLOR(GREEN_BRIGHT), NTCOLOR(HIGHLIGHT), code);
@@ -17,9 +50,18 @@ static void test(struct NCC* ncc, const char* code) {
     boolean matched = NCC_match(ncc, code, &matchingResult, &tree);
     if (matched && tree.node) {
         struct NString treeString;
+
+        // Print tree,
         NString.initialize(&treeString, "");
-        NCC_ASTTreeToString(tree.node, 0, &treeString);
+        NCC_ASTTreeToString(tree.node, 0, &treeString, True /* should check isatty() */);
         NLOGI(0, "%s", NString.get(&treeString));
+
+        // Print leaves,
+        NString.set(&treeString, "");
+        printLeaves(tree.node, &treeString);
+        NLOGI(0, "%s", NString.get(&treeString));
+
+        // Cleanup,
         NString.destroy(&treeString);
         NCC_deleteASTNode(&tree, 0);
     }

@@ -143,4 +143,4 @@ void*   NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data
 void    NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
 boolean NCC_matchASTNode (struct NCC_MatchingData* matchingData);
 
-void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString);
+void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString, boolean printColored);

@@ -1345,10 +1345,7 @@ boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* 
 // Generic AST construction methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int32_t createCount=0, deleteCount=0;
 void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode) {
-
-    //NLOGI("sdf", "Create Node (%d): %s", ++createCount, NString.get(&ruleData->ruleName));
 
     struct NCC_ASTNode* astNode = NMALLOC(sizeof(struct NCC_ASTNode), "NCC.NCC_createASTNode() astNode");
     NString.initialize(&astNode->name, "%s", NString.get(&ruleData->ruleName));
@@ -1364,8 +1361,6 @@ void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* 
 }
 
 static inline void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* parentNode) {
-
-    //NLOGI("sdf", "Delete node (%d) %s: %s", ++deleteCount, NString.get(&astNode->name), NString.get(&astNode->value));
 
     // Destroy members,
     NString.destroy(&astNode->name);
@@ -1411,7 +1406,7 @@ boolean NCC_matchASTNode(struct NCC_MatchingData* matchingData) {
     return True;
 }
 
-void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString) {
+void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString, boolean printColored) {
 
     // 179 = │, 192 = └ , 195 = ├. But somehow, this doesn't work. Had to use unicode...?
 
@@ -1451,7 +1446,11 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
         NString.destroy(&temp1);
         NString.destroyAndFree(temp2);
     } else {
-        NString.append(outString, "%s: %s\n", NString.get(&tree->name), NString.get(&tree->value));
+        if (printColored) {
+            NString.append(outString, "%s: %s%s%s\n", NString.get(&tree->name), NTCOLOR(BLUE_BACKGROUND), NString.get(&tree->value), NTCOLOR(STREAM_DEFAULT));
+        } else {
+            NString.append(outString, "%s: %s\n", NString.get(&tree->name), NString.get(&tree->value));
+        }
     }
 
     // Print children,
@@ -1461,7 +1460,7 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
         boolean lastChild = (i==(childrenCount-1));
         NString.set(&childPrefix, "%s%s", childrenPrefixCString, lastChild ? "└─" : "├─");
         struct NCC_ASTNode* currentChild = *((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i));
-        NCC_ASTTreeToString(currentChild, &childPrefix, outString);
+        NCC_ASTTreeToString(currentChild, &childPrefix, outString, printColored);
     }
 
     // Extra line break if this was the last child of its parent,
