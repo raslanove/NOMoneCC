@@ -354,7 +354,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "init-declarator-list", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "static_assert-declaration", "STUB!"));
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "declaration",
-                                       "{${declaration-specifiers} ${} ${init-declarator-list}|${ε} ${} ${;} } | "
+                                       "{${declaration-specifiers} {${ } ${init-declarator-list}}|${ε} ${} ${;} } | "
                                        "${static_assert-declaration}"));
 
     // Declaration specifiers,
@@ -369,11 +369,11 @@ void defineLanguage(struct NCC* ncc) {
                                        "${type-qualifier} | "
                                        "${function-specifier} | "
                                        "${alignment-specifier} "
-                                       "${} ${declaration-specifiers}|${ε}"));
+                                       "{${} ${declaration-specifiers}}|${ε}"));
 
     // Init declarator list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "init-declarator", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "init-declarator-list",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "init-declarator-list",
                                        "${init-declarator} { "
                                        "   ${} , ${} ${init-declarator}"
                                        "}^*"));
@@ -381,7 +381,7 @@ void defineLanguage(struct NCC* ncc) {
     // Init declarator,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "declarator", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "initializer", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "init-declarator",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "init-declarator",
                                        "${declarator} {${} ${=} ${} ${initializer}}|${ε}"));
 
     // Storage class specifier,
@@ -484,14 +484,14 @@ void defineLanguage(struct NCC* ncc) {
     // Declarator,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "pointer", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "direct-declarator", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "declarator",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "declarator",
                                        "${pointer}|${ε} ${} ${direct-declarator}"));
 
     // Direct declarator,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "type-qualifier-list", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "parameter-type-list", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "identifier-list", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "direct-declarator",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "direct-declarator",
                                        "{${identifier} | {(${} ${declarator} ${})}} {"
                                        "   { ${} ${[} ${}              ${type-qualifier-list}|${ε} ${}              ${assignment-expression}|${ε} ${} ${]}} | "
                                        "   { ${} ${[} ${} static ${}   ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${} ${]}} | "

@@ -18,7 +18,7 @@ SOURCES = \
 
 OBJECTS = $(SOURCES:.c=.o)
 
-TARGET = CCodePretifierColorizer.o
+TARGET = CCodePrettifierColorizer.o
 
 # Targets start here.
 all: $(TARGET)

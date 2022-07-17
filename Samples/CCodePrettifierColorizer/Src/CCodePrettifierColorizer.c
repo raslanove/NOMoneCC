@@ -9,24 +9,48 @@
 #define TEST_DECLARATIONS 0
 #define TEST_STATEMENTS   1
 
+struct PrettifierData {
+
+};
+
 static void printLeavesImplementation(struct NCC_ASTNode* tree, struct NString* outString, struct NString* extraString) {
     // This way the extra string needn't be re-allocated and initialized with every invocation.
+
+#define PRINT_CHILDREN(separator) \
+    int32_t childrenCount = NVector.size(&tree->childNodes); \
+    if (separator) { \
+        printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, 0)), outString, extraString); \
+        for (int32_t i=1; i<childrenCount; i++) { \
+            NString.append(outString, "%s", separator); \
+            printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), outString, extraString); \
+        } \
+    } else { \
+        for (int32_t i=0; i<childrenCount; i++) printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), outString, extraString); \
+    }
 
     const char* ruleNameCString = NString.get(&tree->name );
     const char*    valueCString = NString.get(&tree->value);
 
-    if (NCString.equals(ruleNameCString, "white-space")) {
+    if (NCString.equals(ruleNameCString, "mandatory-white-space")) {
         // Reduce this to a single white-space,
         NString.append(outString, " ");
     } else if (NCString.equals(ruleNameCString, "OB")) {
         NString.append(outString, "{\n");
+    } else if (
+            NCString.equals(ruleNameCString, "function-definition") ||
+            NCString.equals(ruleNameCString, "init-declarator")) {
+        PRINT_CHILDREN(" ")
+    } else if (
+            NCString.equals(ruleNameCString,        "declaration") ||
+            NCString.equals(ruleNameCString,          "statement") ||
+            NCString.equals(ruleNameCString, "compound-statement")) {
+        PRINT_CHILDREN("")
+        if (!NCString.endsWith(NString.get(outString), "\n")) NString.append(outString, "\n");
     } else {
         int32_t childrenCount = NVector.size(&tree->childNodes);
         if (childrenCount) {
-            // Not a leaf,
-            for (int32_t i=0; i<childrenCount; i++) {
-                printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), outString, extraString);
-            }
+            // Not a leaf, print children,
+            PRINT_CHILDREN(0)
         } else {
             // Leaf node,
             NString.append(outString, "%s", valueCString);
@@ -131,12 +155,18 @@ void NMain() {
     #endif
 
     #if TEST_STATEMENTS
+
+    test(&ncc, "\n"
+               "void main(void) {\n"
+               "    {int a = 3 + 5;}\n"
+               "}");
+
+    /*
     test(&ncc, "\n"
                "void main(void) {\n"
                "    int a = 3 + 5;\n"
                "}");
 
-    /*
     // A fake example that avoids the type-def issues,
     test(&ncc, "\n"
                "void variadicFunction(int firstArgument, ...) {\n"
