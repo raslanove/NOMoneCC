@@ -10,42 +10,84 @@
 #define TEST_STATEMENTS   1
 
 struct PrettifierData {
-
+    // TODO: do we need the parentNode and the extraString?
+    struct NCC_ASTNode* parentNode;
+    struct NString outString, extraString;
+    int32_t indentationCount;
 };
 
-static void printLeavesImplementation(struct NCC_ASTNode* tree, struct NString* outString, struct NString* extraString) {
-    // This way the extra string needn't be re-allocated and initialized with every invocation.
+static void initializePrettifierData(struct PrettifierData* prettifierData) {
+    prettifierData->parentNode = 0;
+    NString.initialize(&prettifierData->outString, "");
+    NString.initialize(&prettifierData->extraString, "");
+    prettifierData->indentationCount = 0;
+}
 
-#define PRINT_CHILDREN(separator) \
-    int32_t childrenCount = NVector.size(&tree->childNodes); \
-    if (separator) { \
-        printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, 0)), outString, extraString); \
-        for (int32_t i=1; i<childrenCount; i++) { \
-            NString.append(outString, "%s", separator); \
-            printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), outString, extraString); \
-        } \
-    } else { \
-        for (int32_t i=0; i<childrenCount; i++) printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), outString, extraString); \
+static void destroyPrettifierData(struct PrettifierData* prettifierData) {
+    NString.destroy(&prettifierData->outString);
+    NString.destroy(&prettifierData->extraString);
+}
+
+static void prettifierAppend(struct PrettifierData* prettifierData, const char* text) {
+
+    // Append indentation,
+    if (NCString.endsWith(NString.get(&prettifierData->outString), "\n")) {
+        for (int32_t i=0; i<prettifierData->indentationCount; i++) {
+            NString.append(&prettifierData->outString, "   ");
+        }
     }
 
-    const char* ruleNameCString = NString.get(&tree->name );
-    const char*    valueCString = NString.get(&tree->value);
+    // Append text,
+    NString.append(&prettifierData->outString, "%s", text);
+}
 
-    if (NCString.equals(ruleNameCString, "mandatory-white-space")) {
-        // Reduce this to a single white-space,
-        NString.append(outString, " ");
+static void printLeavesImplementation(struct NCC_ASTNode* tree, struct PrettifierData* prettifierData) {
+    // This way the extra string needn't be re-allocated and initialized with every invocation.
+
+    #define PRINT_CHILDREN(separator) \
+    int32_t childrenCount = NVector.size(&tree->childNodes); \
+    if (separator) { \
+        prettifierData->parentNode = tree; \
+        printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, 0)), prettifierData); \
+        for (int32_t i=1; i<childrenCount; i++) { \
+            prettifierAppend(prettifierData, separator); \
+            prettifierData->parentNode = tree; \
+            printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData); \
+        } \
+    } else { \
+        for (int32_t i=0; i<childrenCount; i++) { \
+            prettifierData->parentNode = tree; \
+            printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData); \
+        } \
+    }
+
+    const char*       ruleNameCString = NString.get(&tree->name);
+    const char* parentRuleNameCString = prettifierData->parentNode ? NString.get(&prettifierData->parentNode->name) : "No Parent";
+
+    if (NCString.equals(ruleNameCString, "+ ")) {
+        prettifierAppend(prettifierData, " ");
     } else if (NCString.equals(ruleNameCString, "OB")) {
-        NString.append(outString, "{\n");
+        prettifierAppend(prettifierData, "{\n");
+        prettifierData->indentationCount++;
+    } else if (NCString.equals(ruleNameCString, "CB")) {
+        prettifierData->indentationCount--;
+        prettifierAppend(prettifierData, "}");
     } else if (
             NCString.equals(ruleNameCString, "function-definition") ||
             NCString.equals(ruleNameCString, "init-declarator")) {
         PRINT_CHILDREN(" ")
     } else if (
+            NCString.equals(ruleNameCString, "+") ||
+            NCString.equals(ruleNameCString, "-")) {
+        prettifierAppend(prettifierData, " ");
+        prettifierAppend(prettifierData, NString.get(&tree->value));
+        prettifierAppend(prettifierData, " ");
+    } else if (
             NCString.equals(ruleNameCString,        "declaration") ||
             NCString.equals(ruleNameCString,          "statement") ||
             NCString.equals(ruleNameCString, "compound-statement")) {
-        PRINT_CHILDREN("")
-        if (!NCString.endsWith(NString.get(outString), "\n")) NString.append(outString, "\n");
+        PRINT_CHILDREN(0)
+        if (!NCString.endsWith(NString.get(&prettifierData->outString), "\n")) prettifierAppend(prettifierData, "\n");
     } else {
         int32_t childrenCount = NVector.size(&tree->childNodes);
         if (childrenCount) {
@@ -53,17 +95,18 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct NString* 
             PRINT_CHILDREN(0)
         } else {
             // Leaf node,
-            NString.append(outString, "%s", valueCString);
+            prettifierAppend(prettifierData, NString.get(&tree->value));
         }
     }
 }
 
 static void printLeaves(struct NCC_ASTNode* tree, struct NString* outString) {
 
-    struct NString extraString;
-    NString.initialize(&extraString, "");
-    printLeavesImplementation(tree, outString, &extraString);
-    NString.destroy(&extraString);
+    struct PrettifierData prettifierData;
+    initializePrettifierData(&prettifierData);
+    printLeavesImplementation(tree, &prettifierData);
+    NString.set(outString, "%s", NString.get(&prettifierData.outString));
+    destroyPrettifierData(&prettifierData);
 }
 
 static void test(struct NCC* ncc, const char* code) {
@@ -156,16 +199,13 @@ void NMain() {
 
     #if TEST_STATEMENTS
 
-    test(&ncc, "\n"
-               "void main(void) {\n"
-               "    {int a = 3 + 5;}\n"
-               "}");
+    test(&ncc, "void main(void){{int a=3+5;}}");
 
-    /*
     test(&ncc, "\n"
                "void main(void) {\n"
                "    int a = 3 + 5;\n"
                "}");
+
 
     // A fake example that avoids the type-def issues,
     test(&ncc, "\n"
@@ -182,6 +222,7 @@ void NMain() {
                "    variadicFunction(567, &a);\n"
                "}\n");
 
+    /*
     test(&ncc, "void main() {\n"
                "   int a ,b, c;\n"
                "   c = a ++ + ++ b;\n"

@@ -73,46 +73,47 @@ void defineLanguage(struct NCC* ncc) {
     // Lexical rules,
     // =====================================
 
-    // Common,
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "+",    "+"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "-",  "\\-"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "*",  "\\*"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "/",    "/"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "%",    "%"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "!",    "!"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "~",    "~"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "&",    "&"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "|",  "\\|"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "^",  "\\^"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "=",    "="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "^=", "\\^="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "&=",   "&="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "|=", "\\|="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "==",   "=="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "!=",   "!="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "<",    "<"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  ">",    ">"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "<=",   "<="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, ">=",   ">="));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "(",    "("));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  ")",    ")"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "[",    "["));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  "]",    "]"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "OB",  "\\{"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "CB",  "\\}"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  ";",    ";"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData,  ",",    ","));
+    // Tokens,
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "+",    "+"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "-",  "\\-"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "*",  "\\*"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "/",    "/"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "%",    "%"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "!",    "!"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "~",    "~"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "&",    "&"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "|",  "\\|"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "^",  "\\^"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "=",    "="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "^=", "\\^="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "&=",   "&="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "|=", "\\|="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "==",   "=="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "!=",   "!="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "<",    "<"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        ">",    ">"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "<=",   "<="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       ">=",   ">="));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "(",    "("));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        ")",    ")"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "[",    "["));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        "]",    "]"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "OB",  "\\{"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,       "CB",  "\\}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        ";",    ";"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,        ",",    ","));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "pointer*",  "\\*"));
 
+    // Markers,
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "+ ",  ""));
+
+    // Spaces and comments,
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ε", ""));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\t|\r|\n}{\\ |\t|\r|\n}^*"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "mandatory-white-space", "${white-space}"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "line-end", "\n|${ε}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "// * ${line-end}|{\\\\${line-end}}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment", "/\\* * \\*/"));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData,           "separator", "          ${white-space}|${line-comment}|${block-comment}"));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData, "mandatory-separator", "${mandatory-white-space}|${line-comment}|${block-comment}"));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData, " ", "${mandatory-separator} ${separator}^*"));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData,  "", "                       ${separator}^*"));
+    NCC_addRule(  plainRuleData.set(&  plainRuleData, "", "{${white-space}|${line-comment}|${block-comment}}^*"));
 
     // TODO: use the non-ignorable white-spaces where they should be (like, between "int" and "a" in "int a;").
 
@@ -354,7 +355,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "init-declarator-list", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "static_assert-declaration", "STUB!"));
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "declaration",
-                                       "{${declaration-specifiers} {${ } ${init-declarator-list}}|${ε} ${} ${;} } | "
+                                       "{${declaration-specifiers} {${+ } ${init-declarator-list}}|${ε} ${} ${;} } | "
                                        "${static_assert-declaration}"));
 
     // Declaration specifiers,
@@ -503,7 +504,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Pointer,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "pointer",
-                                       "\\* ${} ${type-qualifier-list}|${ε} ${} ${pointer}|${ε}"));
+                                       "${pointer*} ${} ${type-qualifier-list}|${ε} ${} ${pointer}|${ε}"));
 
     // Type qualifier list,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "type-qualifier-list",
