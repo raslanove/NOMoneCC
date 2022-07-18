@@ -7,7 +7,10 @@
 
 #define TEST_EXPRESSIONS  0
 #define TEST_DECLARATIONS 0
-#define TEST_STATEMENTS   1
+#define TEST_STATEMENTS   0
+#define TEST_PRETTIFIER   1
+
+#define PRINT_TREES 0
 
 struct PrettifierData {
     // TODO: do we need the parentNode and the extraString?
@@ -42,6 +45,9 @@ static void prettifierAppend(struct PrettifierData* prettifierData, const char* 
 }
 
 static void printLeavesImplementation(struct NCC_ASTNode* tree, struct PrettifierData* prettifierData) {
+
+    // TODO: most of this logic can be replaced with markers. Try it...
+
     // This way the extra string needn't be re-allocated and initialized with every invocation.
 
     #define PRINT_CHILDREN(separator) \
@@ -66,6 +72,8 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
 
     if (NCString.equals(ruleNameCString, "+ ")) {
         prettifierAppend(prettifierData, " ");
+    } else if (NCString.equals(ruleNameCString, "+\n")) {
+        prettifierAppend(prettifierData, "\n");
     } else if (NCString.equals(ruleNameCString, "OB")) {
         prettifierAppend(prettifierData, "{\n");
         prettifierData->indentationCount++;
@@ -120,8 +128,10 @@ static void test(struct NCC* ncc, const char* code) {
 
         // Print tree,
         NString.initialize(&treeString, "");
+        #if PRINT_TREES
         NCC_ASTTreeToString(tree.node, 0, &treeString, True /* should check isatty() */);
         NLOGI(0, "%s", NString.get(&treeString));
+        #endif
 
         // Print leaves,
         NString.set(&treeString, "");
@@ -198,14 +208,10 @@ void NMain() {
     #endif
 
     #if TEST_STATEMENTS
-
-    test(&ncc, "void main(void){{int a=3+5;}}");
-
     test(&ncc, "\n"
                "void main(void) {\n"
                "    int a = 3 + 5;\n"
                "}");
-
 
     // A fake example that avoids the type-def issues,
     test(&ncc, "\n"
@@ -222,12 +228,16 @@ void NMain() {
                "    variadicFunction(567, &a);\n"
                "}\n");
 
-    /*
     test(&ncc, "void main() {\n"
                "   int a ,b, c;\n"
                "   c = a ++ + ++ b;\n"
                "}");
-    */
+    #endif
+
+    #if TEST_PRETTIFIER
+    test(&ncc, "void main(void){{int a=3+5;}}");
+    test(&ncc, "void variadicFunction(int firstArgument,...){struct va_list vaList;va_start(vaList,firstArgument);int*argument=va_arg(vaList,sizeof(int*));*argument=123;va_end(vaList);}void main(void){int a;variadicFunction(567,&a);}");
+    test(&ncc, "void main(){int a,b,c;c=a++ + ++b;}");
     #endif
 
     // Clean up,
