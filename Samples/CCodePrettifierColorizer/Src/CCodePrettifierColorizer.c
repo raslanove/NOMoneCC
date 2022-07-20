@@ -10,7 +10,7 @@
 #define TEST_STATEMENTS   0
 #define TEST_PRETTIFIER   1
 
-#define PRINT_TREES 0
+#define PRINT_TREES 1
 
 struct PrettifierData {
     // TODO: do we need the parentNode and the extraString?
@@ -46,10 +46,9 @@ static void prettifierAppend(struct PrettifierData* prettifierData, const char* 
 
 static void printLeavesImplementation(struct NCC_ASTNode* tree, struct PrettifierData* prettifierData) {
 
-    // TODO: most of this logic can be replaced with markers. Try it...
-
     // This way the extra string needn't be re-allocated and initialized with every invocation.
 
+    // Get rid of this macro...
     #define PRINT_CHILDREN(separator) \
     int32_t childrenCount = NVector.size(&tree->childNodes); \
     if (separator) { \
@@ -70,32 +69,32 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
     const char*       ruleNameCString = NString.get(&tree->name);
     const char* parentRuleNameCString = prettifierData->parentNode ? NString.get(&prettifierData->parentNode->name) : "No Parent";
 
-    if (NCString.equals(ruleNameCString, "+ ")) {
+    if (NCString.equals(ruleNameCString, "insert ")) {
         prettifierAppend(prettifierData, " ");
     } else if (NCString.equals(ruleNameCString, "+\n")) {
         prettifierAppend(prettifierData, "\n");
     } else if (NCString.equals(ruleNameCString, "OB")) {
-        prettifierAppend(prettifierData, "{\n");
+        prettifierAppend(prettifierData, "{");
         prettifierData->indentationCount++;
     } else if (NCString.equals(ruleNameCString, "CB")) {
         prettifierData->indentationCount--;
         prettifierAppend(prettifierData, "}");
-    } else if (
-            NCString.equals(ruleNameCString, "function-definition") ||
-            NCString.equals(ruleNameCString, "init-declarator")) {
-        PRINT_CHILDREN(" ")
-    } else if (
-            NCString.equals(ruleNameCString, "+") ||
-            NCString.equals(ruleNameCString, "-")) {
-        prettifierAppend(prettifierData, " ");
-        prettifierAppend(prettifierData, NString.get(&tree->value));
-        prettifierAppend(prettifierData, " ");
-    } else if (
-            NCString.equals(ruleNameCString,        "declaration") ||
-            NCString.equals(ruleNameCString,          "statement") ||
-            NCString.equals(ruleNameCString, "compound-statement")) {
-        PRINT_CHILDREN(0)
-        if (!NCString.endsWith(NString.get(&prettifierData->outString), "\n")) prettifierAppend(prettifierData, "\n");
+//    } else if (
+//            NCString.equals(ruleNameCString, "function-definition") ||
+//            NCString.equals(ruleNameCString, "init-declarator")) {
+//        PRINT_CHILDREN(" ")
+//    } else if (
+//            NCString.equals(ruleNameCString, "+") ||
+//            NCString.equals(ruleNameCString, "-")) {
+//        prettifierAppend(prettifierData, " ");
+//        prettifierAppend(prettifierData, NString.get(&tree->value));
+//        prettifierAppend(prettifierData, " ");
+//    } else if (
+//            NCString.equals(ruleNameCString,        "declaration") ||
+//            NCString.equals(ruleNameCString,          "statement") ||
+//            NCString.equals(ruleNameCString, "compound-statement")) {
+//        PRINT_CHILDREN(0)
+//        if (!NCString.endsWith(NString.get(&prettifierData->outString), "\n")) prettifierAppend(prettifierData, "\n");
     } else {
         int32_t childrenCount = NVector.size(&tree->childNodes);
         if (childrenCount) {
@@ -235,9 +234,11 @@ void NMain() {
     #endif
 
     #if TEST_PRETTIFIER
-    test(&ncc, "void main(void){{int a=3+5;}}");
-    test(&ncc, "void variadicFunction(int firstArgument,...){struct va_list vaList;va_start(vaList,firstArgument);int*argument=va_arg(vaList,sizeof(int*));*argument=123;va_end(vaList);}void main(void){int a;variadicFunction(567,&a);}");
-    test(&ncc, "void main(){int a,b,c;c=a++ + ++b;}");
+    //test(&ncc, "void main(void){{int a=3+5;}}");
+    //test(&ncc, "void variadicFunction(int firstArgument,...){struct va_list vaList;va_start(vaList,firstArgument);int*argument=va_arg(vaList,sizeof(int*));*argument=123;va_end(vaList);}void main(void){int a;variadicFunction(567,&a);}");
+    //test(&ncc, "void main(){int a,b,c;c=a++ + ++b;}");
+    test(&ncc, "void externalFunction1();void externalFunction2();");
+    //test(&ncc, "void main(){for (int i=0; i<100; i++);}");
     #endif
 
     // Clean up,
