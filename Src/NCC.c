@@ -513,12 +513,13 @@ static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
 
     // If no following tree, discard the shorter match,
     if (!node->nextNode) {
+        NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
         if (rhs.result.matchLength > lhs.result.matchLength) {
             DiscardTree(&lhs)
-            *outResult = rhs.result;
+            PushTree(rhs)
         } else {
             DiscardTree(&rhs)
-            *outResult = lhs.result;
+            PushTree(lhs)
         }
         return True;
     }
@@ -784,9 +785,13 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     }
 
     // Something matched, attempt repeating. Discard any matches that could have been added by the following sub-rule,
-    // TODO: If "Discarding!" never gets printed, remove...
     if (NVector.size(ncc->astNodeStacks[0]) != followingSubRule.stackMark) {
+        /*
         NLOGI("sdf", "Discarding!");
+        struct NCC_ASTNode_Data *nodeData;
+        nodeData = NVector.getLast(ncc->astNodeStacks[0]);
+        NLOGE("sdf", "Discarded name: %s", NString.get(&nodeData->rule->ruleName));
+        */
         DiscardTree(&followingSubRule)
     }
 
