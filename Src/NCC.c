@@ -27,23 +27,23 @@ static void pushstack(struct NCC* ncc, struct NVector* stack, int32_t stackMark)
 
 struct MatchedTree {
     struct NCC_MatchingResult result;
-    struct NCC_ASTNode_Data* parentNode;
+    struct NCC_ASTNode_Data* astParentNode;
     struct NVector **astNodesStack;
     uint32_t stackMark;
 };
 
 static void discardTree(struct MatchedTree* tree);
 static boolean matchTree(
-        struct NCC* ncc, struct NCC_Node* tree, const char* text,
-        struct MatchedTree* matchingResult, struct NCC_ASTNode_Data* parentNode, struct NVector** stack,
+        struct NCC* ncc, struct NCC_Node* tree, const char* text, struct NCC_Node** parentsNextNode,
+        struct MatchedTree* matchingResult, struct NCC_ASTNode_Data* astParentNode, struct NVector** stack,
         int32_t lengthToAddIfTerminated, struct MatchedTree** treesToDiscardIfTerminated, int32_t treesToDiscardCount);
 
 #define COMMA , // See: https://stackoverflow.com/questions/20913103/is-it-possible-to-pass-a-brace-enclosed-initializer-as-a-macro-parameter#comment31397917_20913103
-#define MatchTree(treeName, treeNode, text, parentNode, stack, lengthToAddIfTerminated, deleteList, deleteCount) \
+#define MatchTree(treeName, treeNode, text, parentsNextNode, astParentNode, stack, lengthToAddIfTerminated, deleteList, deleteCount) \
     struct MatchedTree treeName; \
     boolean treeName ## Matched = matchTree( \
-            ncc, treeNode, text, \
-            &treeName, parentNode, &ncc->stack, \
+            ncc, treeNode, text, parentsNextNode, \
+            &treeName, astParentNode, &ncc->stack, \
             lengthToAddIfTerminated, (struct MatchedTree*[]) deleteList, deleteCount); \
     if (treeName.result.terminate) { \
         *outResult = treeName.result; \
@@ -95,29 +95,29 @@ static void genericDeleteTreeNoData  (struct NCC_Node* tree);
 static void genericDeleteTreeWithData(struct NCC_Node* tree);
 
 static void    rootNodeSetPreviousNode (struct NCC_Node* node, struct NCC_Node* previousNode);
-static boolean rootNodeMatch           (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean rootNodeMatch           (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 
-static boolean literalsNodeMatch       (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean literalsNodeMatch       (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 static void    literalsNodeDeleteTree  (struct NCC_Node* tree);
 
-static boolean literalRangeNodeMatch   (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean literalRangeNodeMatch   (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 
-static boolean orNodeMatch             (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean orNodeMatch             (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 static void    orNodeDeleteTree        (struct NCC_Node* tree);
 
-static boolean subRuleNodeMatch        (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean subRuleNodeMatch        (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 static void    subRuleNodeDeleteTree   (struct NCC_Node* tree);
 
-static boolean repeatNodeMatch         (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean repeatNodeMatch         (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 static void    repeatNodeDeleteTree    (struct NCC_Node* tree);
 
-static boolean anythingNodeMatch       (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean anythingNodeMatch       (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 static void    anythingNodeDeleteTree  (struct NCC_Node* tree);
 
-static boolean substituteNodeMatch     (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+static boolean substituteNodeMatch     (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 static void    substituteNodeDeleteTree(struct NCC_Node* tree);
 
-typedef boolean          (*NCC_Node_match          )(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult);
+typedef boolean          (*NCC_Node_match          )(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 typedef void             (*NCC_Node_setPreviousNode)(struct NCC_Node* node, struct NCC_Node* previousNode);
 typedef void             (*NCC_Node_setNextNode    )(struct NCC_Node* node, struct NCC_Node*     nextNode);
 typedef struct NCC_Node* (*NCC_Node_getPreviousNode)(struct NCC_Node* node);
@@ -243,9 +243,9 @@ static void rootNodeSetPreviousNode(struct NCC_Node* node, struct NCC_Node* prev
     NERROR("NCC.c", "%ssetPreviousNode()%s shouldn't be called on a %sroot%s node", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
 }
 
-static boolean rootNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean rootNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     if (node->nextNode) {
-        return nodeMatch[node->nextNode->type](node->nextNode, ncc, text, parentNode, outResult);
+        return nodeMatch[node->nextNode->type](node->nextNode, ncc, text, parentsNextNode, astParentNode, outResult);
     } else {
         NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
         return True;
@@ -265,7 +265,7 @@ struct LiteralsNodeData {
     struct NString literals;
 };
 
-static boolean literalsNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean literalsNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct LiteralsNodeData* nodeData = node->data;
 
     if (!NCString.startsWith(text, NString.get(&nodeData->literals))) {
@@ -276,7 +276,7 @@ static boolean literalsNodeMatch(struct NCC_Node* node, struct NCC* ncc, const c
     // Successful match, check next node,
     int32_t length = NString.length(&nodeData->literals);
     if (node->nextNode) {
-        boolean matched = nodeMatch[node->nextNode->type](node->nextNode, ncc, &text[length], parentNode, outResult);
+        boolean matched = nodeMatch[node->nextNode->type](node->nextNode, ncc, &text[length], parentsNextNode, astParentNode, outResult);
         outResult->matchLength += length;
         return matched;
     }
@@ -340,7 +340,7 @@ struct LiteralRangeNodeData {
     unsigned char rangeStart, rangeEnd;
 };
 
-static boolean literalRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean literalRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct LiteralRangeNodeData* nodeData = node->data;
 
     unsigned char literal = (unsigned char) *text;
@@ -351,7 +351,7 @@ static boolean literalRangeNodeMatch(struct NCC_Node* node, struct NCC* ncc, con
 
     // Successful match, check next node,
     if (node->nextNode) {
-        boolean matched = nodeMatch[node->nextNode->type](node->nextNode, ncc, &text[1], parentNode, outResult);
+        boolean matched = nodeMatch[node->nextNode->type](node->nextNode, ncc, &text[1], parentsNextNode, astParentNode, outResult);
         outResult->matchLength++;
         return matched;
     }
@@ -463,15 +463,15 @@ struct OrNodeData {
     struct NCC_Node* lhsTree;
 };
 
-static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct OrNodeData* nodeData = node->data;
 
     // Match the sides on temporary stacks,
     // Right hand side,
-    MatchTree(rhs, nodeData->rhsTree, text, parentNode, astNodeStacks[1], 0, {&rhs}, 1)
+    MatchTree(rhs, nodeData->rhsTree, text, parentsNextNode, astParentNode, astNodeStacks[1], 0, {&rhs}, 1)
 
     // Left hand side,
-    MatchTree(lhs, nodeData->lhsTree, text, parentNode, astNodeStacks[2], 0, {&rhs COMMA &lhs}, 2)
+    MatchTree(lhs, nodeData->lhsTree, text, parentsNextNode, astParentNode, astNodeStacks[2], 0, {&rhs COMMA &lhs}, 2)
 
     // If neither right or left matches,
     if ((!rhsMatched) && (!lhsMatched)) {
@@ -489,7 +489,7 @@ static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
 
         // If there's a following tree,
         if (node->nextNode) {
-            MatchTree(nextNode, node->nextNode, &text[matchedTree->result.matchLength], parentNode, astNodeStacks[0], matchedTree->result.matchLength, {&nextNode COMMA &lhs COMMA &rhs}, 3)
+            MatchTree(nextNode, node->nextNode, &text[matchedTree->result.matchLength], parentsNextNode, astParentNode, astNodeStacks[0], matchedTree->result.matchLength, {&nextNode COMMA & lhs COMMA & rhs}, 3)
             *outResult = nextNode.result;
             if (nextNode.result.terminate || !nextNodeMatched) {
                 DiscardTree(&lhs)
@@ -525,10 +525,10 @@ static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* t
     }
 
     // Right hand side,
-    MatchTree(rhsTree, node->nextNode, &text[rhs.result.matchLength], parentNode, astNodeStacks[3], rhs.result.matchLength, {&rhsTree COMMA &lhs COMMA &rhs}, 3)
+    MatchTree(rhsTree, node->nextNode, &text[rhs.result.matchLength], parentsNextNode, astParentNode, astNodeStacks[3], rhs.result.matchLength, {&rhsTree COMMA &lhs COMMA &rhs}, 3)
 
     // Left hand side,
-    MatchTree(lhsTree, node->nextNode, &text[lhs.result.matchLength], parentNode, astNodeStacks[4], lhs.result.matchLength, {&lhsTree COMMA &rhsTree COMMA &lhs COMMA &rhs}, 4)
+    MatchTree(lhsTree, node->nextNode, &text[lhs.result.matchLength], parentsNextNode, astParentNode, astNodeStacks[4], lhs.result.matchLength, {&lhsTree COMMA &rhsTree COMMA &lhs COMMA &rhs}, 4)
 
     // If neither right or left trees match,
     int32_t rhsMatchLength = rhs.result.matchLength + rhsTree.result.matchLength;
@@ -630,11 +630,11 @@ struct SubRuleNodeData {
     struct NCC_Node* subRuleTree;
 };
 
-static boolean subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct SubRuleNodeData* nodeData = node->data;
 
     // Match sub-rule on a temporary stack,
-    MatchTree(subRule, nodeData->subRuleTree, text, parentNode, astNodeStacks[1], 0, {&subRule}, 1)
+    MatchTree(subRule, nodeData->subRuleTree, text, parentsNextNode, astParentNode, astNodeStacks[1], 0, {&subRule}, 1)
     if (!subRuleMatched) {
         *outResult = subRule.result;
         return False;
@@ -642,7 +642,7 @@ static boolean subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const ch
 
     // Match next node,
     if (node->nextNode) {
-        MatchTree(followingTree, node->nextNode, &text[subRule.result.matchLength], parentNode, astNodeStacks[0], subRule.result.matchLength, {&followingTree COMMA &subRule}, 2)
+        MatchTree(followingTree, node->nextNode, &text[subRule.result.matchLength], parentsNextNode, astParentNode, astNodeStacks[0], subRule.result.matchLength, {&followingTree COMMA &subRule}, 2)
         *outResult = followingTree.result;
         if (!followingTreeMatched) {
             outResult->matchLength += subRule.result.matchLength;
@@ -741,12 +741,12 @@ struct RepeatNodeData {
     struct NCC_Node* repeatedNode;
 };
 
-static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct RepeatNodeData* nodeData = node->data;
 
     // If there's no following subrule, match as much as you can, and always return True,
     if (!node->nextNode) {
-        MatchTree(repeatedNode, nodeData->repeatedNode, text, parentNode, astNodeStacks[1], 0, {&repeatedNode}, 1)
+        MatchTree(repeatedNode, nodeData->repeatedNode, text, parentsNextNode, astParentNode, astNodeStacks[1], 0, {&repeatedNode}, 1)
         if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
             if (repeatedNodeMatched) DiscardTree(&repeatedNode)
             NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
@@ -754,7 +754,7 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
         }
 
         // Attempt matching again,
-        repeatNodeMatch(node, ncc, &text[repeatedNode.result.matchLength], parentNode, outResult);
+        repeatNodeMatch(node, ncc, &text[repeatedNode.result.matchLength], parentsNextNode, astParentNode, outResult);
         if (outResult->terminate) {
             outResult->matchLength += repeatedNode.result.matchLength;
             return True;
@@ -771,12 +771,12 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     // before returning the parent. If this node doesn't have a next, leave the field set.
 
     // Check if the following sub-rule matches,
-    MatchTree(followingSubRule, node->nextNode, text, parentNode, astNodeStacks[0], 0, {&followingSubRule}, 1)
+    MatchTree(followingSubRule, node->nextNode, text, parentsNextNode, astParentNode, astNodeStacks[0], 0, {&followingSubRule}, 1)
     *outResult = followingSubRule.result;
     if (followingSubRuleMatched && followingSubRule.result.matchLength != 0) return True;
 
     // Following sub-rule didn't match, attempt repeating (on the temporary stack),
-    MatchTree(repeatedNode, nodeData->repeatedNode, text, parentNode, astNodeStacks[1], 0, {&followingSubRule COMMA &repeatedNode}, 2)
+    MatchTree(repeatedNode, nodeData->repeatedNode, text, parentsNextNode, astParentNode, astNodeStacks[1], 0, {&followingSubRule COMMA &repeatedNode}, 2)
     if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
         if (repeatedNodeMatched) DiscardTree(&repeatedNode)
         if (followingSubRuleMatched) return True;
@@ -796,7 +796,7 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     }
 
     // Repeat,
-    boolean matched = repeatNodeMatch(node, ncc, &text[repeatedNode.result.matchLength], parentNode, outResult);
+    boolean matched = repeatNodeMatch(node, ncc, &text[repeatedNode.result.matchLength], parentsNextNode, astParentNode, outResult);
     if (outResult->terminate || !matched) {
         // Didn't end properly, discard,
         outResult->matchLength += repeatedNode.result.matchLength;
@@ -865,7 +865,7 @@ struct AnythingNodeData {
     int32_t dummyToBeRemoved;
 };
 
-static boolean anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct AnythingNodeData* nodeData = node->data;
 
     // If no following subrule, then match the entire text,
@@ -880,7 +880,7 @@ static boolean anythingNodeMatch(struct NCC_Node* node, struct NCC* ncc, const c
     // There's a following subrule. Stop as soon as it's matched,
     do {
         // Check if the following sub-rule matches,
-        MatchTree(followingSubRule, node->nextNode, &text[totalMatchLength], parentNode, astNodeStacks[0], totalMatchLength, {&followingSubRule}, 1)
+        MatchTree(followingSubRule, node->nextNode, &text[totalMatchLength], parentsNextNode, astParentNode, astNodeStacks[0], totalMatchLength, {&followingSubRule}, 1)
 
         // If following subrule matched,
         if (followingSubRuleMatched && followingSubRule.result.matchLength > 0) {
@@ -935,7 +935,7 @@ struct SubstituteNodeData {
     struct NCC_Rule* rule;
 };
 
-static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* parentNode, struct NCC_MatchingResult* outResult) {
+static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_Node** parentsNextNode, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct SubstituteNodeData *nodeData = node->data;
     boolean accepted, discardRule=True, deleteAstNode;
 
@@ -943,13 +943,13 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     struct NCC_ASTNode_Data newAstNode;
     newAstNode.rule = &nodeData->rule->data;
     NCC_createNodeListener createASTNode = newAstNode.rule->createNodeListener;
-    newAstNode.node = createASTNode ? createASTNode(newAstNode.rule, parentNode) : 0;
+    newAstNode.node = createASTNode ? createASTNode(newAstNode.rule, astParentNode) : 0;
     boolean newAstNodeCreated = deleteAstNode = newAstNode.node != 0;
 
     // Match rule on a temporary stack,
     struct MatchedTree rule;
-    accepted = matchTree(ncc, nodeData->rule->tree, text,
-                         &rule, newAstNodeCreated ? &newAstNode : parentNode, &ncc->astNodeStacks[1],
+    accepted = matchTree(ncc, nodeData->rule->tree, text, parentsNextNode,
+                         &rule, newAstNodeCreated ? &newAstNode : astParentNode, &ncc->astNodeStacks[1],
                          0, 0, 0);
     if (rule.result.terminate || !accepted) {
         *outResult = rule.result;
@@ -992,8 +992,8 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     if (node->nextNode) {
         struct MatchedTree nextNode;
         // TODO: do we always need to discard self on terminate? Shouldn't it be already discarded?
-        accepted = matchTree(ncc, node->nextNode, &text[matchLength],
-                             &nextNode, parentNode, &ncc->astNodeStacks[0],
+        accepted = matchTree(ncc, node->nextNode, &text[matchLength], parentsNextNode,
+                             &nextNode, astParentNode, &ncc->astNodeStacks[0],
                              0, (struct MatchedTree*[]) {&nextNode}, 1);
         *outResult = nextNode.result;
         if (nextNode.result.terminate || !accepted) {
@@ -1022,7 +1022,7 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
     if (discardRule) DiscardTree(&rule)
     if (deleteAstNode) {
         NCC_deleteNodeListener deleteListener = newAstNode.rule->deleteNodeListener;
-        if (deleteListener) deleteListener(&newAstNode, parentNode);
+        if (deleteListener) deleteListener(&newAstNode, astParentNode);
     }
     return accepted;
 }
@@ -1164,21 +1164,21 @@ static void discardTree(struct MatchedTree* tree) {
     while (NVector.size(stack) > tree->stackMark) {
         NVector.popBack(stack, &currentNode);
         NCC_deleteNodeListener deleteListener = currentNode.rule->deleteNodeListener;
-        if (deleteListener) deleteListener(&currentNode, tree->parentNode);
+        if (deleteListener) deleteListener(&currentNode, tree->astParentNode);
     }
 }
 
 static boolean matchTree(
-        struct NCC* ncc, struct NCC_Node* tree, const char* text,
-        struct MatchedTree* matchingResult, struct NCC_ASTNode_Data* parentNode, struct NVector** stack,
+        struct NCC* ncc, struct NCC_Node* tree, const char* text, struct NCC_Node** parentsNextNode,
+        struct MatchedTree* matchingResult, struct NCC_ASTNode_Data* astParentNode, struct NVector** stack,
         int32_t lengthToAddIfTerminated, struct MatchedTree** treesToDiscardIfTerminated, int32_t treesToDiscardCount) {
 
     // Match,
-    matchingResult->parentNode = parentNode;
+    matchingResult->astParentNode = astParentNode;
     matchingResult->astNodesStack = stack;
     matchingResult->stackMark = NVector.size(*stack);
     switchStacks(&ncc->astNodeStacks[0], stack);
-    boolean matched = nodeMatch[tree->type](tree, ncc, text, parentNode, &matchingResult->result);
+    boolean matched = nodeMatch[tree->type](tree, ncc, text, parentsNextNode, astParentNode, &matchingResult->result);
     switchStacks(&ncc->astNodeStacks[0], stack);
 
     // Return immediately if termination didn't take place,
@@ -1321,7 +1321,7 @@ boolean NCC_setRootRule(struct NCC* ncc, const char* ruleName) {
 boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult, struct NCC_ASTNode_Data* outNode) {
 
     struct MatchedTree ruleTree;
-    boolean matched = matchTree(ncc, ncc->matchRule->tree, text,
+    boolean matched = matchTree(ncc, ncc->matchRule->tree, text, 0,
                                 &ruleTree, 0, &ncc->astNodeStacks[0],
                                 0, (struct MatchedTree*[]) {&ruleTree}, 1);
     *outResult = ruleTree.result;
@@ -1349,7 +1349,7 @@ boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* 
 // Generic AST construction methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode) {
+void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* astParentNodeData) {
 
     struct NCC_ASTNode* astNode = NMALLOC(sizeof(struct NCC_ASTNode), "NCC.NCC_createASTNode() astNode");
     NString.initialize(&astNode->name, "%s", NString.get(&ruleData->ruleName));
@@ -1357,14 +1357,14 @@ void* NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* 
     NVector.initialize(&astNode->childNodes, 0, sizeof(struct NCC_ASTNode*));
     astNode->rule = ruleData;
 
-    if (parentNode) {
-        struct NCC_ASTNode* parentASTNode = parentNode->node;
+    if (astParentNodeData) {
+        struct NCC_ASTNode* parentASTNode = astParentNodeData->node;
         NVector.pushBack(&parentASTNode->childNodes, &astNode);
     }
     return astNode;
 }
 
-static inline void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* parentNode) {
+static inline void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode_Data* astParentNodeData) {
 
     // Destroy members,
     NString.destroy(&astNode->name);
@@ -1393,15 +1393,15 @@ static inline void deleteASTNode(struct NCC_ASTNode* astNode, struct NCC_ASTNode
     NFREE(astNode, "NCC.NCC_deleteASTNode() astNode");
 
     // Remove from parent (if any),
-    if (parentNode) {
-        struct NCC_ASTNode* parentASTNode = parentNode->node;
+    if (astParentNodeData) {
+        struct NCC_ASTNode* parentASTNode = astParentNodeData->node;
         int32_t nodeIndex = NVector.getFirstInstanceIndex(&parentASTNode->childNodes, &astNode);
         if (nodeIndex!=-1) NVector.remove(&parentASTNode->childNodes, nodeIndex);
     }
 }
 
-void NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode) {
-    deleteASTNode((struct NCC_ASTNode*) node->node, parentNode);
+void NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* astParentNode) {
+    deleteASTNode((struct NCC_ASTNode*) node->node, astParentNode);
 }
 
 boolean NCC_matchASTNode(struct NCC_MatchingData* matchingData) {

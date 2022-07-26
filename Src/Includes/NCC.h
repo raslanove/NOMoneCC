@@ -139,8 +139,8 @@ struct NCC_ASTNode {
     void* extraData;
 };
 
-void*   NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode);
-void    NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
+void*   NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* astParentNodeData);
+void    NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* astParentNode);
 boolean NCC_matchASTNode (struct NCC_MatchingData* matchingData);
 
 void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString, boolean printColored);
