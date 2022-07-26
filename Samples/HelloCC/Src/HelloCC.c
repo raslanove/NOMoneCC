@@ -43,7 +43,7 @@ void assert(struct NCC* ncc, const char*ruleName, const char* rule, const char* 
         // Get the tree in string format,
         struct NString treeString;
         NString.initialize(&treeString, "");
-        NCC_ASTTreeToString(treeData.node, 0, &treeString);
+        NCC_ASTTreeToString(treeData.node, 0, &treeString, True);
 
         // Print and clean up,
         NLOGI("", "%s", NString.get(&treeString));
