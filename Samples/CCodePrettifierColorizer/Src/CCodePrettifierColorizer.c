@@ -238,6 +238,7 @@ void NMain() {
     //test(&ncc, "void variadicFunction(int firstArgument,...){struct va_list vaList;va_start(vaList,firstArgument);int*argument=va_arg(vaList,sizeof(int*));*argument=123;va_end(vaList);}void main(void){int a;variadicFunction(567,&a);}");
     //test(&ncc, "void main(){int a,b,c;c=a++ + ++b;}");
     test(&ncc, "void externalFunction1();void externalFunction2();");
+    test(&ncc, "void extern alFunction1();void extern alFunction2();");
     //test(&ncc, "void main(){for (int i=0; i<100; i++);}");
     #endif
 

@@ -185,6 +185,9 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "identifier-non-digit", "${non-digit} | ${universal-character-name}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "identifier", "${identifier-non-digit} {${digit} | ${identifier-non-digit}}^*"));
 
+    // Tokens,
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "t", "${extern}|${identifier}"));
+
     // Constants,
     // Integer constant,
     NCC_addRule(plainRuleData.set(&plainRuleData, "decimal-constant", "${non-zero-digit} ${digit}^*"));
@@ -404,8 +407,6 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "init-declarator-list", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "static_assert-declaration", "STUB!"));
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "declaration",
-                                       // TODO: can't use identifiers like "externalFunction" because they get misunderstood as storage-class-specifier followed by an identifier...
-                                       //"{${declaration-specifiers} {${ } ${+ } ${init-declarator-list}}|${ε} ${} ${;} } | "
                                        "{${declaration-specifiers} {${+ } ${init-declarator-list}}|${ε} ${} ${;} } | "
                                        "${static_assert-declaration}"));
 
@@ -421,7 +422,7 @@ void defineLanguage(struct NCC* ncc) {
                                        "${type-qualifier} | "
                                        "${function-specifier} | "
                                        "${alignment-specifier} "
-                                       "{${ } ${+ } ${declaration-specifiers}}|${ε}"));
+                                       "{${+ } ${declaration-specifiers}}|${ε}"));
 
     // Init declarator list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "init-declarator", "STUB!"));
@@ -438,7 +439,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Storage class specifier,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "storage-class-specifier",
-                                       "${typedef} | ${extern} | ${static} | ${_Thread_local} | ${auto} | ${register}"));
+                                       "${typedef} | #{t,extern} | ${static} | ${_Thread_local} | ${auto} | ${register}"));
 
     // Type specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "atomic-type-specifier", "STUB!"));

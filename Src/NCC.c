@@ -61,7 +61,7 @@ static boolean matchTree(
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct NCC_NodeType {
-    int32_t ROOT, LITERALS, OR, LITERAL_RANGE, REPEAT, SUB_RULE, SUBSTITUTE, ANYTHING;
+    int32_t ROOT, LITERALS, LITERAL_RANGE, OR, SUB_RULE, REPEAT, ANYTHING, SUBSTITUTE, TOKEN;
 };
 const struct NCC_NodeType NCC_NodeType = {
     .ROOT = 0,
@@ -71,7 +71,8 @@ const struct NCC_NodeType NCC_NodeType = {
     .SUB_RULE = 4,
     .REPEAT = 5,
     .ANYTHING = 6,
-    .SUBSTITUTE = 7
+    .SUBSTITUTE = 7,
+    .TOKEN = 8
 };
 
 struct NCC_Node {
@@ -117,6 +118,8 @@ static void    anythingNodeDeleteTree  (struct NCC_Node* tree);
 static boolean substituteNodeMatch     (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 static void    substituteNodeDeleteTree(struct NCC_Node* tree);
 
+static boolean tokenNodeMatch          (struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
+
 typedef boolean          (*NCC_Node_match          )(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult);
 typedef void             (*NCC_Node_setPreviousNode)(struct NCC_Node* node, struct NCC_Node* previousNode);
 typedef void             (*NCC_Node_setNextNode    )(struct NCC_Node* node, struct NCC_Node*     nextNode);
@@ -125,12 +128,12 @@ typedef struct NCC_Node* (*NCC_Node_getNextNode    )(struct NCC_Node* node);
 typedef void             (*NCC_Node_deleteTree     )(struct NCC_Node* tree);
 
 //                                                       Root                     Literals                Literals range             Or                      Sub-rule                Repeat                  Anything                Substitute
-static NCC_Node_match           nodeMatch          [] = {rootNodeMatch          , literalsNodeMatch     , literalRangeNodeMatch    , orNodeMatch           , subRuleNodeMatch      , repeatNodeMatch       , anythingNodeMatch     , substituteNodeMatch     };
-static NCC_Node_setPreviousNode nodeSetPreviousNode[] = {rootNodeSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode   , genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode  };
-static NCC_Node_setNextNode     nodeSetNextNode    [] = {genericSetNextNode     , genericSetNextNode    , genericSetNextNode       , genericSetNextNode    , genericSetNextNode    , genericSetNextNode    , genericSetNextNode    , genericSetNextNode      };
-static NCC_Node_getPreviousNode nodeGetPreviousNode[] = {genericGetPreviousNode , genericGetPreviousNode, genericGetPreviousNode   , genericGetPreviousNode, genericGetPreviousNode, genericGetPreviousNode, genericGetPreviousNode, genericGetPreviousNode  };
-static NCC_Node_getNextNode     nodeGetNextNode    [] = {genericGetNextNode     , genericGetNextNode    , genericGetNextNode       , genericGetNextNode    , genericGetNextNode    , genericGetNextNode    , genericGetNextNode    , genericGetNextNode      };
-static NCC_Node_deleteTree      nodeDeleteTree     [] = {genericDeleteTreeNoData, literalsNodeDeleteTree, genericDeleteTreeWithData, orNodeDeleteTree      , subRuleNodeDeleteTree , repeatNodeDeleteTree  , anythingNodeDeleteTree, substituteNodeDeleteTree};
+static NCC_Node_match           nodeMatch          [] = {rootNodeMatch          , literalsNodeMatch     , literalRangeNodeMatch    , orNodeMatch           , subRuleNodeMatch      , repeatNodeMatch       , anythingNodeMatch     , substituteNodeMatch     , tokenNodeMatch};
+static NCC_Node_setPreviousNode nodeSetPreviousNode[] = {rootNodeSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode   , genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode  , genericSetPreviousNode};
+static NCC_Node_setNextNode     nodeSetNextNode    [] = {genericSetNextNode     , genericSetNextNode    , genericSetNextNode       , genericSetNextNode    , genericSetNextNode    , genericSetNextNode    , genericSetNextNode    , genericSetNextNode      , genericSetNextNode};
+static NCC_Node_getPreviousNode nodeGetPreviousNode[] = {genericGetPreviousNode , genericGetPreviousNode, genericGetPreviousNode   , genericGetPreviousNode, genericGetPreviousNode, genericGetPreviousNode, genericGetPreviousNode, genericGetPreviousNode  , genericGetPreviousNode};
+static NCC_Node_getNextNode     nodeGetNextNode    [] = {genericGetNextNode     , genericGetNextNode    , genericGetNextNode       , genericGetNextNode    , genericGetNextNode    , genericGetNextNode    , genericGetNextNode    , genericGetNextNode      , genericGetNextNode};
+static NCC_Node_deleteTree      nodeDeleteTree     [] = {genericDeleteTreeNoData, literalsNodeDeleteTree, genericDeleteTreeWithData, orNodeDeleteTree      , subRuleNodeDeleteTree , repeatNodeDeleteTree  , anythingNodeDeleteTree, substituteNodeDeleteTree, genericDeleteTreeWithData};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rule
@@ -1086,6 +1089,129 @@ static struct NCC_Node* createSubstituteNode(struct NCC* ncc, struct NCC_Node* p
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Token node
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct TokenNodeData {
+    struct NCC_Rule* tokensParentRule;
+    struct NCC_Rule* tokenRule;
+};
+
+static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
+    struct TokenNodeData *nodeData = node->data;
+
+    MatchTree(token, nodeData->tokensParentRule->tree, text, astParentNode, astNodeStacks[0], 0, {&token}, 1)
+    *outResult = token.result;
+    if (!tokenMatched) return False;
+
+    // Check the stack difference,
+    int32_t pushedNodesCount = NVector.size(ncc->astNodeStacks[0]) - token.stackMark;
+    if (!pushedNodesCount) {
+        NERROR("NCC", "tokenNodeMatch(): matched token %s#{%s,%s}%s didn't push any AST nodes.", NTCOLOR(HIGHLIGHT), NString.get(&nodeData->tokensParentRule->data.ruleName), NString.get(&nodeData->tokenRule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
+        return False;
+    } else if (pushedNodesCount > 1) {
+        NERROR("NCC", "tokenNodeMatch(): matched token %s#{%s,%s}%s pushed multiple AST nodes.", NTCOLOR(HIGHLIGHT), NString.get(&nodeData->tokensParentRule->data.ruleName), NString.get(&nodeData->tokenRule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
+        DiscardTree(&token)
+        return False;
+    }
+
+    // Get the matched AST node,
+    struct NCC_ASTNode_Data* matchedASTNode = NVector.getLast(ncc->astNodeStacks[0]);
+    if (NCString.equals(NString.get(&matchedASTNode->rule->ruleName), NString.get(&nodeData->tokenRule->data.ruleName))) {
+        return True;
+    }
+
+    DiscardTree(&token)
+    return False;
+}
+
+static struct NCC_Node* createTokenNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
+
+    // Skip the '#'.
+    const char* ruleBeginning = (*in_out_rule)++;
+
+    // Skip the '{',
+    if (*((*in_out_rule)++) != '{') {
+        NERROR("NCC", "createTokenNode(): unescaped %s#%ss must be followed by %s{%ss", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+
+    // Find the matching closing braces,
+    const char* rulesText = *in_out_rule;
+    int32_t rulesTextLength=0;
+    do {
+        char currentChar = *((*in_out_rule)++);
+        if (currentChar=='}') break;
+        if (!currentChar) {
+            NERROR("NCC", "createTokenNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+            return 0;
+        }
+        rulesTextLength++;
+    } while(True);
+
+    // Find the first comma, separating the tokens' parent rule and the token's rule,
+    int32_t commaIndex=-1;
+    for (int32_t i=0; i<rulesTextLength; i++) {
+        char currentChar = rulesText[i];
+        if (currentChar == ',') {
+            commaIndex = i;
+            break;
+        }
+    }
+
+    // If comma is not found,
+    if (commaIndex == -1) {
+        NERROR("NCC", "createTokenNode(): couldn't find a comma that separates rule names in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+
+    // Extract tokens' parent rule name,
+    char *tokensParentRuleName = NMALLOC(commaIndex+1, "NCC.createTokenNode() tokensParentRuleName");
+    NSystemUtils.memcpy(tokensParentRuleName, rulesText, commaIndex);
+    tokensParentRuleName[commaIndex] = 0;
+
+    // Extract token's rule name,
+    int32_t tokenRuleNameLength = rulesTextLength-(commaIndex+1);
+    char *tokenRuleName = NMALLOC(tokenRuleNameLength+1, "NCC.createTokenNode() tokenRuleName");
+    NSystemUtils.memcpy(tokenRuleName, &rulesText[commaIndex+1], tokenRuleNameLength);
+    tokenRuleName[tokenRuleNameLength] = 0;
+
+    // Get the tokens' parent rule,
+    struct NCC_Rule* tokensParentRule = getRule(ncc, tokensParentRuleName);
+    if (!tokensParentRule) {
+        NERROR("NCC", "createTokenNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), tokensParentRuleName, NTCOLOR(STREAM_DEFAULT));
+        NFREE(tokensParentRuleName, "NCC.createTokenNode() tokensParentRuleName 1");
+        NFREE(       tokenRuleName, "NCC.createTokenNode() tokenRuleName 1");
+        return 0;
+    }
+
+    // Get the token's rule,
+    struct NCC_Rule* tokenRule = getRule(ncc, tokenRuleName);
+    if (!tokenRule) {
+        NERROR("NCC", "createTokenNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), tokenRuleName, NTCOLOR(STREAM_DEFAULT));
+        NFREE(tokensParentRuleName, "NCC.createTokenNode() tokensParentRuleName 2");
+        NFREE(       tokenRuleName, "NCC.createTokenNode() tokenRuleName 2");
+        return 0;
+    }
+
+    // Create the node,
+    struct TokenNodeData* nodeData = NMALLOC(sizeof(struct TokenNodeData), "NCC.createTokenNode() nodeData");
+    struct NCC_Node* node = genericCreateNode(NCC_NodeType.TOKEN, nodeData);
+    nodeData->tokensParentRule = tokensParentRule;
+    nodeData->tokenRule = tokenRule;
+
+    #if NCC_VERBOSE
+    NLOGI("NCC", "Created token node: %s#{%s,%s}%s", NTCOLOR(HIGHLIGHT), tokensParentRuleName, tokenRuleName, NTCOLOR(STREAM_DEFAULT));
+    #endif
+
+    NFREE(tokensParentRuleName, "NCC.createTokenNode() tokensParentRuleName 3");
+    NFREE(       tokenRuleName, "NCC.createTokenNode() tokenRuleName 3");
+
+    nodeSetNextNode[parentNode->type](parentNode, node);
+    return node;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Helper functions
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1114,6 +1240,7 @@ static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode
 
     switch (currentChar) {
         case   0: return 0;
+        case '#': return createTokenNode(ncc, parentNode, in_out_rule);
         case '$': return createSubstituteNode(ncc, parentNode, in_out_rule);
         case '*': return createAnythingNode(ncc, parentNode, in_out_rule);
         case '{': return createSubRuleNode(ncc, parentNode, in_out_rule);
