@@ -284,6 +284,19 @@ void NMain() {
 
     NVector.destroy(&declaredVariables);
     NCC_destroyRuleData(&ruleData);
+    
+    // Token,
+    /*
+    rule := {abc^*}abc123
+
+    abc    := {abc}
+    abc123 := {abc123}
+    token := ${abc}|${abc123}
+
+    rule := {#{token,abc}^*}abc123
+
+    abcabc123
+    */
 
     NError.logAndTerminate();
 }

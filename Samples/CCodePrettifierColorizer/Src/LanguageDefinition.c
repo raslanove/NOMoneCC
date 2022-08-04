@@ -185,9 +185,6 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "identifier-non-digit", "${non-digit} | ${universal-character-name}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "identifier", "${identifier-non-digit} {${digit} | ${identifier-non-digit}}^*"));
 
-    // Tokens,
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "t", "${extern}|${identifier}"));
-
     // Constants,
     // Integer constant,
     NCC_addRule(plainRuleData.set(&plainRuleData, "decimal-constant", "${non-zero-digit} ${digit}^*"));
@@ -439,7 +436,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Storage class specifier,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "storage-class-specifier",
-                                       "${typedef} | #{t,extern} | ${static} | ${_Thread_local} | ${auto} | ${register}"));
+                                       "#{{typedef} {extern} {static} {_Thread_local} {auto} {register} {identifier} != {identifier}}"));
 
     // Type specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "atomic-type-specifier", "STUB!"));
@@ -447,20 +444,21 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enum-specifier", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "typedef-name", "STUB!"));
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "type-specifier",
-                                       "${void}   | ${char}     | "
-                                       "${short}  | ${int}      | ${long} | "
-                                       "${float}  | ${double}   | "
-                                       "${signed} | ${unsigned} | "
-                                       "${_Bool}  | ${_Complex} | "
-                                       "${atomic-type-specifier} | "
-                                       "${struct-or-union-specifier} | "
-                                       "${enum-specifier} |"
-                                       "${typedef-name}"));
+                                       "#{{void}     {char}            "
+                                       "  {short}    {int}      {long} "
+                                       "  {float}    {double}          "
+                                       "  {signed}   {unsigned}        "
+                                       "  {_Bool}    {_Complex}        "
+                                       "  {atomic-type-specifier}      "
+                                       "  {struct-or-union-specifier}  "
+                                       "  {enum-specifier}             "
+                                       "  {typedef-name}               "
+                                       "  {identifier} != {identifier}}"));
 
     // Struct or union specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-or-union", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-declaration-list", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "struct-or-union-specifier",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "struct-or-union-specifier",
                                        "${struct-or-union} ${+ }"
                                        "{${identifier}|${ε} ${} ${OB} ${} ${struct-declaration-list} ${} ${CB} } | "
                                        " ${identifier}"));
