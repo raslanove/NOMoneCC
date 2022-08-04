@@ -1676,6 +1676,9 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
     }
     const char* childrenPrefixCString = NString.get(childrenPrefix);
 
+    // Prepare node name,
+    struct NString *nodeName = NString.replace(NString.get(&tree->name), "\n", "\\n");
+
     // Tree value could span multiple lines, remove line-breaks,
     int32_t childrenCount = NVector.size(&tree->childNodes);
     boolean containsLineBreak = NCString.contains(NString.get(&tree->value), "\n");
@@ -1684,18 +1687,20 @@ void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struc
         struct NString *temp2;
         NString.initialize(&temp1, "\n%s%s", childrenPrefixCString, childrenCount ? "│" : " ");
         temp2 = NString.replace(NString.get(&tree->value), "\n", NString.get(&temp1));
-        NString.append(outString, "%s:%s%s", NString.get(&tree->name), NString.get(&temp1), NString.get(temp2));
+        NString.append(outString, "%s:%s%s", NString.get(nodeName), NString.get(&temp1), NString.get(temp2));
         if (!NCString.endsWith(NString.get(temp2), "│")) NString.append(outString, "%s", NString.get(&temp1));
         NString.append(outString, "\n");
         NString.destroy(&temp1);
         NString.destroyAndFree(temp2);
     } else {
         if (printColored) {
-            NString.append(outString, "%s: %s%s%s\n", NString.get(&tree->name), NTCOLOR(BLUE_BACKGROUND), NString.get(&tree->value), NTCOLOR(STREAM_DEFAULT));
+            NString.append(outString, "%s: %s%s%s\n", NString.get(nodeName), NTCOLOR(BLUE_BACKGROUND), NString.get(&tree->value), NTCOLOR(STREAM_DEFAULT));
         } else {
-            NString.append(outString, "%s: %s\n", NString.get(&tree->name), NString.get(&tree->value));
+            NString.append(outString, "%s: %s\n", NString.get(nodeName), NString.get(&tree->value));
         }
     }
+
+    NString.destroyAndFree(nodeName);
 
     // Print children,
     struct NString childPrefix;
