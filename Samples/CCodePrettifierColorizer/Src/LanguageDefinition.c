@@ -165,9 +165,8 @@ void defineLanguage(struct NCC* ncc) {
 
     // Spaces and comments,
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ε", ""));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\t|\r|\n}{\\ |\t|\r|\n}^*"));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData, "line-end", "\n|${ε}"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "${white-space} // * ${line-end}|{\\\\${line-end}}"));
+    NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\t|\r|\n|{\\\\\n}} {\\ |\t|\r|\n|{\\\\\n}}^*"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "${white-space} // {{* \\\\\n}^*} *{\n|${ε}}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment", "${white-space} /\\* * \\*/ ${white-space}"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ignorable", "#{{white-space} {line-comment} {block-comment}}"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData,  "",              "${ignorable}^*"));
@@ -176,7 +175,10 @@ void defineLanguage(struct NCC* ncc) {
     // Markers,
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert space", ""));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "+ ", "${} ${insert space}"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "+\n", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert \n" , ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert \ns", ""));
+    NCC_addRule(  plainRuleData.set(&  plainRuleData, "+\n" , "${} ${insert \n}"));
+    NCC_addRule(  plainRuleData.set(&  plainRuleData, "+\ns", "${} ${insert \ns}"));
 
     // TODO: use the non-ignorable white-spaces where they should be (like, between "int" and "a" in "int a;").
 
@@ -467,7 +469,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-declaration-list", "STUB!"));
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "struct-or-union-specifier",
                                        "${struct-or-union} ${+ }"
-                                       "{${identifier}|${ε} ${} ${OB} ${} ${struct-declaration-list} ${} ${CB} } | "
+                                       "{${identifier}|${ε} ${+ } ${OB} ${+\n} ${} ${struct-declaration-list} ${} ${CB} } | "
                                        " ${identifier}"));
 
     // Struct or union,
@@ -484,27 +486,26 @@ void defineLanguage(struct NCC* ncc) {
     // Struct declaration,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "specifier-qualifier-list", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-declarator-list", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "struct-declaration",
-                                       "{${specifier-qualifier-list} ${} ${struct-declarator-list}|${ε} ${} ${;}} | "
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "struct-declaration",
+                                       "{${specifier-qualifier-list} ${+ } ${struct-declarator-list}|${ε} ${} ${;} ${+\n}} | "
                                        "${static_assert-declaration}"));
 
     // Specifier qualifier list,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "specifier-qualifier-list",
-                                       "#{{type-specifier}"
-                                       "  {type-qualifier}}"
-                                       "#{{specifier-qualifier-list} {ε}}"));
+                                       "#{{type-specifier} {type-qualifier}}"
+                                       "{${+ } ${specifier-qualifier-list}}|${ε}"));
 
     // Struct declarator list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-declarator", "STUB!"));
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "struct-declarator-list",
                                        "${struct-declarator} { "
-                                       "   ${} ${,} ${} ${struct-declarator}"
+                                       "   ${} ${,} ${+ } ${struct-declarator}"
                                        "}^*"));
 
     // Struct declarator,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "struct-declarator",
                                        " ${declarator} | "
-                                       "{${declarator}|${ε} ${} ${:} ${} ${constant-expression}}"));
+                                       "{${declarator}|${ε} ${} ${:} ${+ } ${constant-expression}}"));
 
     // Enum specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enumerator-list", "STUB!"));
@@ -516,7 +517,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enumerator", "STUB!"));
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "enumerator-list",
                                        "${enumerator} {"
-                                       "   ${} ${,} ${} ${enumerator}"
+                                       "   ${} ${,} ${+ } ${enumerator}"
                                        "}^*"));
 
     // Enumerator,
@@ -551,10 +552,10 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "identifier-list", "STUB!"));
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "direct-declarator",
                                        "{${identifier} | {(${} ${declarator} ${})}} {"
-                                       "   { ${} ${[} ${}              ${type-qualifier-list}|${ε} ${}              ${assignment-expression}|${ε} ${} ${]}} | "
-                                       "   { ${} ${[} ${} static ${}   ${type-qualifier-list}|${ε} ${}              ${assignment-expression}      ${} ${]}} | "
-                                       "   { ${} ${[} ${}              ${type-qualifier-list}      ${} static   ${} ${assignment-expression}      ${} ${]}} | "
-                                       "   { ${} ${[} ${}              ${type-qualifier-list}|${ε} ${} ${*}     ${}                                   ${]}} | "
+                                       "   { ${} ${[} ${}               ${type-qualifier-list}|${ε} ${}               ${assignment-expression}|${ε} ${} ${]}} | "
+                                       "   { ${} ${[} ${} ${static} ${} ${type-qualifier-list}|${ε} ${}               ${assignment-expression}      ${} ${]}} | "
+                                       "   { ${} ${[} ${}               ${type-qualifier-list}      ${} ${static} ${} ${assignment-expression}      ${} ${]}} | "
+                                       "   { ${} ${[} ${}               ${type-qualifier-list}|${ε} ${} ${*}      ${}                                   ${]}} | "
                                        "   { ${} ${(} ${} ${parameter-type-list}  ${} ${)}} | "
                                        "   { ${} ${(} ${} ${identifier-list}|${ε} ${} ${)}}"
                                        "}^*"));
@@ -571,14 +572,14 @@ void defineLanguage(struct NCC* ncc) {
 
     // Parameter type list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "parameter-list", "STUB!"));
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "parameter-type-list",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "parameter-type-list",
                                        "${parameter-list} {${} ${,} ${+ } ${...} }|${ε}"));
 
     // Parameter list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "parameter-declaration", "STUB!"));
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "parameter-list",
                                        "${parameter-declaration} {"
-                                       "   ${} ${,} ${+ } ${+ } ${parameter-declaration}"
+                                       "   ${} ${,} ${+ } ${parameter-declaration}"
                                        "}^*"));
 
     // Parameter declaration,
@@ -726,9 +727,9 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "external-declaration", "STUB!"));
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "translation-unit",
                                        "${} ${external-declaration} {{"
-                                       "   ${} ${+\n} ${external-declaration}"
-                                       "}^*} ${}")); // Encapsulated the repeat in a sub-rule to avoid early termination. Can
-    // we consider early termination a feature now?
+                                       "   ${} ${+\ns} ${external-declaration}"
+                                       "}^*} ${}")); // Encapsulated the repeat in a sub-rule to avoid early termination. Can \
+                                                        we consider early termination a feature now?
 
     // External declaration,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "function-definition", "STUB!"));

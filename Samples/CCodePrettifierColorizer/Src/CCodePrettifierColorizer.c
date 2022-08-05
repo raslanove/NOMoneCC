@@ -5,8 +5,8 @@
 
 #include "LanguageDefinition.h"
 
-#define TEST_EXPRESSIONS  1
-#define TEST_DECLARATIONS 0
+#define TEST_EXPRESSIONS  0
+#define TEST_DECLARATIONS 1
 #define TEST_STATEMENTS   0
 #define TEST_TOKENS       0
 #define TEST_PRETTIFIER   0
@@ -72,7 +72,9 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
 
     if (NCString.equals(ruleNameCString, "insert space")) {
         prettifierAppend(prettifierData, " ");
-    } else if (NCString.equals(ruleNameCString, "+\n")) {
+    } else if (NCString.equals(ruleNameCString, "insert \n")) {
+        if (!NCString.endsWith(NString.get(&prettifierData->outString), "\n")) prettifierAppend(prettifierData, "\n");
+    } else if (NCString.equals(ruleNameCString, "insert \ns")) {
         prettifierAppend(prettifierData, "\n");
     } else if (NCString.equals(ruleNameCString, "OB")) {
         prettifierAppend(prettifierData, "{");
@@ -195,8 +197,9 @@ void NMain() {
     test(&ncc, "struct NCC ncc;");
     test(&ncc, "struct MyStruct { int a, b; float c; } myStructInstance;");
     test(&ncc, "struct NCC {\n"
-               "   void* extraData;\n"
-               "   struct NVector rules; // Pointers to rules, not rules, so that they don't get relocated when more rules are added.\n"
+               "   void* extraData; \\\n"
+               "   struct NVector rules; // Pointers to rules, not rules, so that they \\\n"
+               "                            don't get relocated when more rules are added.\n"
                "   struct NVector variables;\n"
                "   struct NByteVector *matchRoute, *tempRoute1, *tempRoute2, *tempRoute3, *tempRoute4; // Pointers to nodes. TODO: maybe turn them into an array?\n"
                "};");
