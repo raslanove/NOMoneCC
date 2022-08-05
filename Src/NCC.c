@@ -1103,7 +1103,7 @@ struct TokenNodeData {
 static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct TokenNodeData *nodeData = node->data;
 
-    int32_t currentNodeStackIndex=0;
+    int32_t currentNodeStackIndex=1;
     struct MatchedTree longestMatchRule;
     int maxMatchLength=0;
     boolean foundMatch=False;
@@ -1120,11 +1120,11 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
         if (!tokenMatched) continue;
 
         // Check if multiple AST nodes where pushed,
-        int32_t pushedNodesCount = NVector.size(ncc->astNodeStacks[currentNodeStackIndex]) - token.stackMark;
+        int32_t pushedNodesCount = NVector.size(*token.astNodesStack) - token.stackMark;
         if (pushedNodesCount > 1) {
             NERROR("NCC", "tokenNodeMatch(): matched token %s#{%s,%s}%s pushed multiple AST nodes.", NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
             for (int32_t i=0; i<pushedNodesCount; i++) {
-                struct NCC_ASTNode_Data* matchedASTNode = NVector.get(ncc->astNodeStacks[currentNodeStackIndex], token.stackMark + i);
+                struct NCC_ASTNode_Data* matchedASTNode = NVector.get(*token.astNodesStack, token.stackMark + i);
                 NLOGE("NCC", "                  %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&matchedASTNode->rule->ruleName), NTCOLOR(STREAM_DEFAULT));
             }
             *outResult = token.result;
@@ -1138,14 +1138,14 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
             if (token.result.matchLength > longestMatchRule.result.matchLength) {
                 DiscardTree(&longestMatchRule)
                 longestMatchRule = token;
-                currentNodeStackIndex = 1 - currentNodeStackIndex;  // Switch to the other stack.
+                currentNodeStackIndex = 3 - currentNodeStackIndex;  // Switch to the other stack.
             } else {
                 DiscardTree(&token)
             }
         } else {
             foundMatch = True;
             longestMatchRule = token;
-            currentNodeStackIndex = 1 - currentNodeStackIndex;  // Switch to the other stack.
+            currentNodeStackIndex = 3 - currentNodeStackIndex;  // Switch to the other stack.
         }
     }
 
@@ -1156,53 +1156,56 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
         return False;
     }
 
-    // If the matched rule didn't push anything,
+    // Check whether the matched rule pushed anything,
     int32_t pushedNodesCount = NVector.size(*longestMatchRule.astNodesStack) - longestMatchRule.stackMark;
-    if (!pushedNodesCount) {
-        *outResult = longestMatchRule.result;
-        return !nodeData->matchIfIncluded;
-    }
+    if (pushedNodesCount) {
 
-    // Get the matched AST node,
-    struct NCC_ASTNode_Data* matchedASTNode = NVector.getLast(*longestMatchRule.astNodesStack);
-    const char* matchedASTNodeRuleName = NString.get(&matchedASTNode->rule->ruleName);
+        // Get the matched AST node,
+        struct NCC_ASTNode_Data* matchedASTNode = NVector.getLast(*longestMatchRule.astNodesStack);
+        const char* matchedASTNodeRuleName = NString.get(&matchedASTNode->rule->ruleName);
 
-    // Verify,
-    int32_t verificationRulesCount = NVector.size(&nodeData->verificationRules);
-    for (int32_t i=0; i<verificationRulesCount; i++) {
-        struct NCC_Rule* rule = *(struct NCC_Rule**) NVector.get(&nodeData->verificationRules, i);
-        if (NCString.equals(matchedASTNodeRuleName, NString.get(&rule->data.ruleName))) {
-
-            if (nodeData->matchIfIncluded) {
-                if (*longestMatchRule.astNodesStack == ncc->astNodeStacks[0]) {
-                    *outResult = longestMatchRule.result;
-                } else {
-                    NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
-                    PushTree(longestMatchRule)
-                }
-                return True;
-            } else {
-                *outResult = longestMatchRule.result;
-                DiscardTree(&longestMatchRule)
-                return False;
+        // Verify,
+        boolean matchFound = False;
+        int32_t verificationRulesCount = NVector.size(&nodeData->verificationRules);
+        for (int32_t i=0; i<verificationRulesCount; i++) {
+            struct NCC_Rule* rule = *(struct NCC_Rule**) NVector.get(&nodeData->verificationRules, i);
+            if (NCString.equals(matchedASTNodeRuleName, NString.get(&rule->data.ruleName))) {
+                matchFound = True;
+                break;
             }
         }
+
+        // Either match found when it shouldn't or no match found when it should,
+        if (matchFound ^ nodeData->matchIfIncluded) {
+            *outResult = longestMatchRule.result;
+            DiscardTree(&longestMatchRule)
+            return False;
+        }
+    } else {
+
+        // No AST nodes where pushed,
+        if (nodeData->matchIfIncluded) {
+            *outResult = longestMatchRule.result;
+            return False;
+        }
     }
 
-    // No match found,
-    if (nodeData->matchIfIncluded) {
-        *outResult = longestMatchRule.result;
-        DiscardTree(&longestMatchRule)
-        return False;
-    } else {
-        if (*longestMatchRule.astNodesStack == ncc->astNodeStacks[0]) {
-            *outResult = longestMatchRule.result;
-        } else {
-            NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
-            PushTree(longestMatchRule)
+    // Verified, match next node,
+    if (node->nextNode) {
+        MatchTree(followingTree, node->nextNode, &text[longestMatchRule.result.matchLength], astParentNode, astNodeStacks[0], longestMatchRule.result.matchLength, {&followingTree COMMA &longestMatchRule}, 2)
+        *outResult = followingTree.result;
+        if (!followingTreeMatched) {
+            outResult->matchLength += longestMatchRule.result.matchLength;
+            DiscardTree(&longestMatchRule)
+            return False;
         }
-        return True;
+    } else {
+        NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
     }
+
+    // Push the matched rule stack,
+    PushTree(longestMatchRule)
+    return True;
 }
 
 static void tokenNodeDeleteTree(struct NCC_Node* tree) {

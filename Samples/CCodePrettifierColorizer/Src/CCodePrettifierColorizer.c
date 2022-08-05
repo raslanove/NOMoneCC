@@ -5,10 +5,10 @@
 
 #include "LanguageDefinition.h"
 
-#define TEST_EXPRESSIONS  0
+#define TEST_EXPRESSIONS  1
 #define TEST_DECLARATIONS 0
 #define TEST_STATEMENTS   0
-#define TEST_TOKENS       1
+#define TEST_TOKENS       0
 #define TEST_PRETTIFIER   0
 
 #define PRINT_TREES 1
@@ -70,7 +70,7 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
     const char*       ruleNameCString = NString.get(&tree->name);
     const char* parentRuleNameCString = prettifierData->parentNode ? NString.get(&prettifierData->parentNode->name) : "No Parent";
 
-    if (NCString.equals(ruleNameCString, "insert ")) {
+    if (NCString.equals(ruleNameCString, "insert space")) {
         prettifierAppend(prettifierData, " ");
     } else if (NCString.equals(ruleNameCString, "+\n")) {
         prettifierAppend(prettifierData, "\n");

@@ -174,8 +174,8 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(  plainRuleData.set(&  plainRuleData, " ", "${ignorable} ${ignorable}^*"));
 
     // Markers,
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert " , ""));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "+ " , "${} ${insert }"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert space", ""));
+    NCC_addRule(  plainRuleData.set(&  plainRuleData, "+ ", "${} ${insert space}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "+\n", ""));
 
     // TODO: use the non-ignorable white-spaces where they should be (like, between "int" and "a" in "int a;").
@@ -251,7 +251,7 @@ void defineLanguage(struct NCC* ncc) {
                                        "${identifier} | "
                                        "${constant} | "
                                        "${string-literal} | "
-                                       "{ ( ${} ${expression} ${} ) } | "
+                                       "{ ${(} ${} ${expression} ${} ${)} } | "
                                        "${generic-selection}"));
 
     // Generic selection,
@@ -261,20 +261,20 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (plainRuleData.set(&plainRuleData, "assignment-expression", "STUB!"));
     NCC_addRule   (plainRuleData.set(&plainRuleData, "generic-assoc-list", "STUB!"));
     NCC_updateRule(plainRuleData.set(&plainRuleData, "generic-selection",
-                                     "_Generic ${} ( ${} ${assignment-expression} ${} , ${} ${generic-assoc-list} ${} )"));
+                                     "_Generic ${} ${(} ${} ${assignment-expression} ${} ${,} ${} ${generic-assoc-list} ${} ${)}"));
 
     // Generic assoc list,
     NCC_addRule   (plainRuleData.set(&plainRuleData, "generic-association", "STUB!"));
     NCC_updateRule(plainRuleData.set(&plainRuleData, "generic-assoc-list",
                                      "${generic-association} {"
-                                     "   ${} , ${} ${generic-association}"
+                                     "   ${} ${,} ${} ${generic-association}"
                                      "}^*"));
 
     // Generic association,
     NCC_addRule   (plainRuleData.set(&plainRuleData, "type-name", "STUB!"));
     NCC_updateRule(plainRuleData.set(&plainRuleData, "generic-association",
-                                     "{${type-name} ${} : ${} ${assignment-expression}} |"
-                                     "{default      ${} : ${} ${assignment-expression}}"));
+                                     "{${type-name} ${} ${:} ${} ${assignment-expression}} |"
+                                     "{default      ${} ${:} ${} ${assignment-expression}}"));
 
     // Postfix expression,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "argument-expression-list", "STUB!"));
@@ -312,7 +312,7 @@ void defineLanguage(struct NCC* ncc) {
                                        "{ ${_Alignof} ${} ${(} ${} ${type-name}        ${} ${)} }"));
 
     // Unary operator,
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "unary-operator", "#{{&} {*} {+} {-} {~} {!}}"));
+    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "unary-operator", "#{{&}{*}{+}{-}{~}{!} {&&}{++}{--} != {&&}{++}{--}}"));
 
     // Cast expression,
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "cast-expression",
@@ -352,7 +352,7 @@ void defineLanguage(struct NCC* ncc) {
     // AND expression,
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "and-expression",
                                        "${equality-expression} {"
-                                       "   ${+ } ${&} ${+ } ${equality-expression}"
+                                       "   ${+ } #{{&} {&&} != {&&}} ${+ } ${equality-expression}"
                                        "}^*"));
 
     // Exclusive OR expression,
@@ -364,7 +364,7 @@ void defineLanguage(struct NCC* ncc) {
     // Inclusive OR expression,
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "or-expression",
                                        "${xor-expression} {"
-                                       "   ${+ } ${|} ${+ } ${xor-expression}"
+                                       "   ${+ } #{{|} {||} != {||}} ${+ } ${xor-expression}"
                                        "}^*"));
 
     // Logical AND expression,
@@ -589,7 +589,7 @@ void defineLanguage(struct NCC* ncc) {
     // Identifier list,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "identifier-list",
                                        "${identifier} {"
-                                       "   ${} , ${} ${identifier}"
+                                       "   ${} ${,} ${} ${identifier}"
                                        "}^*"));
 
     // Type name,
@@ -748,7 +748,8 @@ void defineLanguage(struct NCC* ncc) {
 
     // Test document,
     NCC_addRule   (pushingRuleData.set(&pushingRuleData, "TestDocument",
-                                       "#{      {primary-expression}"
+                                       "#{                          "
+                                       "        {primary-expression}"
                                        "        {postfix-expression}"
                                        "          {unary-expression}"
                                        "           {cast-expression}"
@@ -767,7 +768,8 @@ void defineLanguage(struct NCC* ncc) {
                                        "                {expression}"
                                        "       {constant-expression}"
                                        "               {declaration}"
-                                       "          {translation-unit}}"));
+                                       "          {translation-unit}"
+                                       "}                           "));
     NCC_setRootRule(ncc, "TestDocument");
 
     // Cleanup,
