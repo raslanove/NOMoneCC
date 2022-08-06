@@ -6,8 +6,8 @@
 #include "LanguageDefinition.h"
 
 #define TEST_EXPRESSIONS  0
-#define TEST_DECLARATIONS 1
-#define TEST_STATEMENTS   0
+#define TEST_DECLARATIONS 0
+#define TEST_STATEMENTS   1
 #define TEST_TOKENS       0
 #define TEST_PRETTIFIER   0
 

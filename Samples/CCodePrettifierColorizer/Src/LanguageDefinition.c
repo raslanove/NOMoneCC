@@ -688,9 +688,9 @@ void defineLanguage(struct NCC* ncc) {
     // Block item list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "block-item", "STUB!"));
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "block-item-list",
-                                       "${+\n} ${block-item} {"
-                                       "   ${} ${+\n} ${block-item}"
-                                       "}^* ${+\n}"));
+                                       "${+\n} ${block-item} {{"
+                                       "   ${+\n} ${block-item}"
+                                       "}^*} ${+\n}"));
 
     // Block item,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "block-item",
