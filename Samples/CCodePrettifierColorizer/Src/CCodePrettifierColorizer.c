@@ -70,6 +70,14 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
     } else if (NCString.equals(ruleNameCString, "CB")) {
         prettifierData->indentationCount--;
         prettifierAppend(prettifierData, "}");
+    } else if (NCString.equals(ruleNameCString, "line-cont")) {
+        prettifierAppend(prettifierData, " \\\n");
+    } else if (NCString.equals(ruleNameCString, "line-comment") || NCString.equals(ruleNameCString, "block-comment")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(BLACK_BRIGHT));
+        prettifierAppend(prettifierData, NString.get(&tree->value));
+        const char *color; NVector.popBack(&prettifierData->colorStack, &color);
+    } else if (NCString.equals(ruleNameCString, "POP C" )) {
+        const char *color; NVector.popBack(&prettifierData->colorStack, &color);
     } else if (NCString.equals(ruleNameCString, "PSH C0")) {
         NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(STREAM_DEFAULT));
     } else if (NCString.equals(ruleNameCString, "PSH C1")) {
@@ -86,8 +94,6 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
         NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(GREEN_BRIGHT));
     } else if (NCString.equals(ruleNameCString, "PSH C7")) {
         NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(BLACK_BRIGHT));
-    } else if (NCString.equals(ruleNameCString, "POP C" )) {
-        const char *color; NVector.popBack(&prettifierData->colorStack, &color);
     } else {
         int32_t childrenCount = NVector.size(&tree->childNodes);
         if (childrenCount) {

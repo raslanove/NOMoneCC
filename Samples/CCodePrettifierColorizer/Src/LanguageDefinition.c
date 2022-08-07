@@ -179,13 +179,10 @@ void defineLanguage(struct NCC* ncc) {
 
     // Spaces and comments,
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ε", ""));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "\\\n", "\\\\\n"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-cont", "${insert space}${\\\n}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-cont", "\\\\\n"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\t|\r|\n|${line-cont}} {\\ |\t|\r|\n|${line-cont}}^*"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment-contents", "${white-space} // {{* \\\\\n}^*} * \n|${ε}"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "${PSH C7} ${line-comment-contents} ${POP C}"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment-contents", "${white-space} /\\* * \\*/"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment", "${PSH C7} ${block-comment-contents} ${POP C}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "${white-space} // {{* \\\\\n}^*} * \n|${ε}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment", "${white-space} /\\* * \\*/"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ignorable", "#{{white-space} {line-comment} {block-comment}}"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData,  "",              "${ignorable}^*"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, " ", "${ignorable} ${ignorable}^*"));
