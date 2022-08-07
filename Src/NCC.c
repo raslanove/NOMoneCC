@@ -1122,7 +1122,7 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
         // Check if multiple AST nodes where pushed,
         int32_t pushedNodesCount = NVector.size(*token.astNodesStack) - token.stackMark;
         if (pushedNodesCount > 1) {
-            NERROR("NCC", "tokenNodeMatch(): matched token %s#{%s,%s}%s pushed multiple AST nodes.", NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
+            NERROR("NCC", "tokenNodeMatch(): matched token rule %s%s%s pushed multiple AST nodes.", NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
             for (int32_t i=0; i<pushedNodesCount; i++) {
                 struct NCC_ASTNode_Data* matchedASTNode = NVector.get(*token.astNodesStack, token.stackMark + i);
                 NLOGE("NCC", "                  %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&matchedASTNode->rule->ruleName), NTCOLOR(STREAM_DEFAULT));

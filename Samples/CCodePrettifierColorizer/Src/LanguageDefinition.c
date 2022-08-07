@@ -439,12 +439,12 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "function-specifier", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "alignment-specifier", "STUB!"));
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "declaration-specifiers",
-                                       "#{{storage-class-specifier} "
-                                       "  {type-specifier}"
-                                       "  {type-qualifier}"
-                                       "  {function-specifier}"
-                                       "  {alignment-specifier}}"
-                                       "{${+ } ${declaration-specifiers}}|${ε}"));
+                                       "${PSH C1} #{{storage-class-specifier} "
+                                       "            {type-specifier}"
+                                       "            {type-qualifier}"
+                                       "            {function-specifier}"
+                                       "            {alignment-specifier}}"
+                                       "${POP C} {${+ } ${declaration-specifiers}}|${ε}"));
 
     // Init declarator list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "init-declarator", "STUB!"));
@@ -460,7 +460,7 @@ void defineLanguage(struct NCC* ncc) {
                                        "${declarator} {${+ } ${=} ${+ } ${initializer}}|${ε}"));
 
     // Storage class specifier,
-    NCC_updateRule(  plainRuleData.set(&  plainRuleData, "storage-class-specifier",
+    NCC_updateRule(pushingRuleData.set(&pushingRuleData, "storage-class-specifier",
                                        "#{{typedef} {extern} {static} {_Thread_local} {auto} {register} {identifier} != {identifier}}"));
 
     // Type specifier,
@@ -469,16 +469,16 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enum-specifier", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "typedef-name", "STUB!"));
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "type-specifier",
-                                       "${PSH C1} #{{void}     {char}                    "
-                                       "            {short}    {int}      {long}         "
-                                       "            {float}    {double}                  "
-                                       "            {signed}   {unsigned}                "
-                                       "            {_Bool}    {_Complex}                "
-                                       "            {atomic-type-specifier}              "
-                                       "            {struct-or-union-specifier}          "
-                                       "            {enum-specifier}                     "
-                                       "            {typedef-name}                       "
-                                       "            {identifier} != {identifier}} ${POP C}"));
+                                       "#{{void}     {char}            "
+                                       "  {short}    {int}      {long} "
+                                       "  {float}    {double}          "
+                                       "  {signed}   {unsigned}        "
+                                       "  {_Bool}    {_Complex}        "
+                                       "  {atomic-type-specifier}      "
+                                       "  {struct-or-union-specifier}  "
+                                       "  {enum-specifier}             "
+                                       "  {typedef-name}               "
+                                       "  {identifier} != {identifier}}"));
 
     // Struct or union specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-or-union", "STUB!"));
@@ -542,7 +542,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Atomic type specifier,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "atomic-type-specifier",
-                                       "_Atomic ${} ( ${} ${type-name} ${} )"));
+                                       "${_Atomic} ${} ${(} ${} ${type-name} ${} ${)}"));
 
     // Type qualifier,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "type-qualifier",
@@ -554,7 +554,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Alignment specifier,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "alignment-specifier",
-                                       "${_Alineas} ${} ( ${} ${type-name}|${constant-expression} ${} )"));
+                                       "${_Alineas} ${} ${(} ${} ${type-name}|${constant-expression} ${} ${)}"));
 
     // Declarator,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "pointer", "STUB!"));

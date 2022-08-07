@@ -12,6 +12,7 @@
 #define TEST_PRETTIFIER   1
 
 #define PRINT_TREES 0
+#define PRINT_COLORED_TREES 1
 
 struct PrettifierData {
     struct NString outString;
@@ -128,7 +129,7 @@ static void test(struct NCC* ncc, const char* code) {
         // Print tree,
         NString.initialize(&treeString, "");
         #if PRINT_TREES
-        NCC_ASTTreeToString(tree.node, 0, &treeString, True /* should check isatty() */);
+        NCC_ASTTreeToString(tree.node, 0, &treeString, PRINT_COLORED_TREES /* should check isatty() */);
         NLOGI(0, "%s", NString.get(&treeString));
         #endif
 
