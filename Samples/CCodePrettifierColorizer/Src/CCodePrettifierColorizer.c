@@ -5,31 +5,29 @@
 
 #include "LanguageDefinition.h"
 
-#define TEST_EXPRESSIONS  0
-#define TEST_DECLARATIONS 0
+#define TEST_EXPRESSIONS  1
+#define TEST_DECLARATIONS 1
 #define TEST_STATEMENTS   1
-#define TEST_TOKENS       0
-#define TEST_PRETTIFIER   0
+#define TEST_TOKENS       1
+#define TEST_PRETTIFIER   1
 
-#define PRINT_TREES 1
+#define PRINT_TREES 0
 
 struct PrettifierData {
-    // TODO: do we need the parentNode and the extraString?
-    struct NCC_ASTNode* parentNode;
-    struct NString outString, extraString;
+    struct NString outString;
+    struct NVector colorStack; // const char*
     int32_t indentationCount;
 };
 
 static void initializePrettifierData(struct PrettifierData* prettifierData) {
-    prettifierData->parentNode = 0;
     NString.initialize(&prettifierData->outString, "");
-    NString.initialize(&prettifierData->extraString, "");
+    NVector.initialize(&prettifierData->colorStack, 0, sizeof(const char*));
     prettifierData->indentationCount = 0;
 }
 
 static void destroyPrettifierData(struct PrettifierData* prettifierData) {
     NString.destroy(&prettifierData->outString);
-    NString.destroy(&prettifierData->extraString);
+    NVector.destroy(&prettifierData->colorStack);
 }
 
 static void prettifierAppend(struct PrettifierData* prettifierData, const char* text) {
@@ -41,34 +39,24 @@ static void prettifierAppend(struct PrettifierData* prettifierData, const char* 
         }
     }
 
+    // Add color,
+    if (!(NCString.equals(text, " ") || NCString.equals(text, "\n"))) {
+        if (NVector.size(&prettifierData->colorStack)) {
+            const char* color = *(const char**) NVector.getLast(&prettifierData->colorStack);
+            NString.append(&prettifierData->outString, "%s", color);
+        } else {
+            NString.append(&prettifierData->outString, "%s", NTCOLOR(STREAM_DEFAULT));
+        }
+    }
+
     // Append text,
     NString.append(&prettifierData->outString, "%s", text);
 }
 
 static void printLeavesImplementation(struct NCC_ASTNode* tree, struct PrettifierData* prettifierData) {
+    // Moved the implementation to a separate function to remove the prettifierData from the interface.
 
-    // This way the extra string needn't be re-allocated and initialized with every invocation.
-
-    // Get rid of this macro...
-    #define PRINT_CHILDREN(separator) \
-    int32_t childrenCount = NVector.size(&tree->childNodes); \
-    if (separator) { \
-        prettifierData->parentNode = tree; \
-        printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, 0)), prettifierData); \
-        for (int32_t i=1; i<childrenCount; i++) { \
-            prettifierAppend(prettifierData, separator); \
-            prettifierData->parentNode = tree; \
-            printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData); \
-        } \
-    } else { \
-        for (int32_t i=0; i<childrenCount; i++) { \
-            prettifierData->parentNode = tree; \
-            printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData); \
-        } \
-    }
-
-    const char*       ruleNameCString = NString.get(&tree->name);
-    const char* parentRuleNameCString = prettifierData->parentNode ? NString.get(&prettifierData->parentNode->name) : "No Parent";
+    const char* ruleNameCString = NString.get(&tree->name);
 
     if (NCString.equals(ruleNameCString, "insert space")) {
         prettifierAppend(prettifierData, " ");
@@ -82,27 +70,30 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
     } else if (NCString.equals(ruleNameCString, "CB")) {
         prettifierData->indentationCount--;
         prettifierAppend(prettifierData, "}");
-//    } else if (
-//            NCString.equals(ruleNameCString, "function-definition") ||
-//            NCString.equals(ruleNameCString, "init-declarator")) {
-//        PRINT_CHILDREN(" ")
-//    } else if (
-//            NCString.equals(ruleNameCString, "+") ||
-//            NCString.equals(ruleNameCString, "-")) {
-//        prettifierAppend(prettifierData, " ");
-//        prettifierAppend(prettifierData, NString.get(&tree->value));
-//        prettifierAppend(prettifierData, " ");
-//    } else if (
-//            NCString.equals(ruleNameCString,        "declaration") ||
-//            NCString.equals(ruleNameCString,          "statement") ||
-//            NCString.equals(ruleNameCString, "compound-statement")) {
-//        PRINT_CHILDREN(0)
-//        if (!NCString.endsWith(NString.get(&prettifierData->outString), "\n")) prettifierAppend(prettifierData, "\n");
+    } else if (NCString.equals(ruleNameCString, "PSH C0")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(STREAM_DEFAULT));
+    } else if (NCString.equals(ruleNameCString, "PSH C1")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(YELLOW_BOLD_BRIGHT));
+    } else if (NCString.equals(ruleNameCString, "PSH C2")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(YELLOW_BRIGHT));
+    } else if (NCString.equals(ruleNameCString, "PSH C3")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(MAGENTA_BOLD_BRIGHT));
+    } else if (NCString.equals(ruleNameCString, "PSH C4")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(GREEN_BRIGHT));
+    } else if (NCString.equals(ruleNameCString, "PSH C5")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(RED_BRIGHT));
+    } else if (NCString.equals(ruleNameCString, "PSH C6")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(GREEN_BRIGHT));
+    } else if (NCString.equals(ruleNameCString, "PSH C7")) {
+        NVector.pushBack(&prettifierData->colorStack, &NTCOLOR(BLACK_BRIGHT));
+    } else if (NCString.equals(ruleNameCString, "POP C" )) {
+        const char *color; NVector.popBack(&prettifierData->colorStack, &color);
     } else {
         int32_t childrenCount = NVector.size(&tree->childNodes);
         if (childrenCount) {
             // Not a leaf, print children,
-            PRINT_CHILDREN(0)
+            int32_t childrenCount = NVector.size(&tree->childNodes);
+            for (int32_t i=0; i<childrenCount; i++) printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData);
         } else {
             // Leaf node,
             prettifierAppend(prettifierData, NString.get(&tree->value));
@@ -121,7 +112,7 @@ static void printLeaves(struct NCC_ASTNode* tree, struct NString* outString) {
 
 static void test(struct NCC* ncc, const char* code) {
 
-    NLOGI("", "%sTesting: %s%s", NTCOLOR(GREEN_BRIGHT), NTCOLOR(HIGHLIGHT), code);
+    NLOGI("", "%sTesting: %s%s", NTCOLOR(GREEN_BRIGHT), NTCOLOR(BLUE_BRIGHT), code);
     struct NCC_MatchingResult matchingResult;
     struct NCC_ASTNode_Data tree;
     boolean matched = NCC_match(ncc, code, &matchingResult, &tree);
@@ -197,9 +188,11 @@ void NMain() {
     test(&ncc, "struct NCC ncc;");
     test(&ncc, "struct MyStruct { int a, b; float c; } myStructInstance;");
     test(&ncc, "struct NCC {\n"
+               "   /* Testing block comments. */\n"
                "   void* extraData; \\\n"
                "   struct NVector rules; // Pointers to rules, not rules, so that they \\\n"
                "                            don't get relocated when more rules are added.\n"
+               "   int noha:12; // Testing static initialization.\n"
                "   struct NVector variables;\n"
                "   struct NByteVector *matchRoute, *tempRoute1, *tempRoute2, *tempRoute3, *tempRoute4; // Pointers to nodes. TODO: maybe turn them into an array?\n"
                "};");
@@ -250,6 +243,12 @@ void NMain() {
     test(&ncc, "void main(){int a,b,c;c=a++ + ++b;}");
     test(&ncc, "void extern alFunction1();void extern alFunction2();");
     test(&ncc, "void main(){for (int i=0; i<100; i++);}");
+    test(&ncc, "void main(void) {"
+               "   for (int i=0; i<100; i++) {"
+               "      printf(\"besm Allah\");"
+               "   }"
+               "   NError.logAndTerminate();"
+               "}");
     #endif
 
     // Clean up,

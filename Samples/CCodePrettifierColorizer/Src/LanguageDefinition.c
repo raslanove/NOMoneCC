@@ -163,17 +163,34 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(pushingRuleData.set(&pushingRuleData,       "_Alignof",       "_Alignof"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData,       "_Alineas",       "_Alineas"));
 
+    // Color markers,
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "POP C" , ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C0", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C1", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C2", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C3", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C4", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C5", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C6", ""));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "PSH C7", ""));
+
+    // Space markers (forward declaration),
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert space", ""));
+
     // Spaces and comments,
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ε", ""));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\t|\r|\n|{\\\\\n}} {\\ |\t|\r|\n|{\\\\\n}}^*"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "${white-space} // {{* \\\\\n}^*} *{\n|${ε}}"));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment", "${white-space} /\\* * \\*/ ${white-space}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "\\\n", "\\\\\n"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-cont", "${insert space}${\\\n}"));
+    NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\t|\r|\n|${line-cont}} {\\ |\t|\r|\n|${line-cont}}^*"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment-contents", "${white-space} // {{* \\\\\n}^*} * \n|${ε}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "${PSH C7} ${line-comment-contents} ${POP C}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment-contents", "${white-space} /\\* * \\*/"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment", "${PSH C7} ${block-comment-contents} ${POP C}"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ignorable", "#{{white-space} {line-comment} {block-comment}}"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData,  "",              "${ignorable}^*"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, " ", "${ignorable} ${ignorable}^*"));
 
-    // Markers,
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert space", ""));
+    // Space markers (implementation),
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "+ ", "${} ${insert space}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert \n" , ""));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "insert \ns", ""));
@@ -200,7 +217,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(plainRuleData.set(&plainRuleData, "octal-constant", "0 0-7^*"));
     NCC_addRule(plainRuleData.set(&plainRuleData, "hexadecimal-constant", "${hexadecimal-prefix} ${hexadecimal-digit} ${hexadecimal-digit}^*"));
     NCC_addRule(plainRuleData.set(&plainRuleData, "integer-suffix", "{ u|U l|L|{ll}|{LL}|${ε} } | { l|L|{ll}|{LL} u|U|${ε} }"));
-    NCC_addRule(plainRuleData.set(&plainRuleData, "integer-constant", "${decimal-constant}|${octal-constant}|${hexadecimal-constant} ${integer-suffix}|${ε}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "integer-constant", "${decimal-constant}|${octal-constant}|${hexadecimal-constant} ${integer-suffix}|${ε}"));
 
     // Decimal floating point,
     NCC_addRule(plainRuleData.set(&plainRuleData, "fractional-constant", "{${digit}^* . ${digit} ${digit}^*} | {${digit} ${digit}^* . }"));
@@ -219,24 +236,26 @@ void defineLanguage(struct NCC* ncc) {
                                   "${hexadecimal-prefix} ${hexadecimal-fractional-constant}|{${hexadecimal-digit}${hexadecimal-digit}^*} ${binary-exponent-part} ${floating-suffix}|${ε}"));
 
     // Floating point constant,
-    NCC_addRule(plainRuleData.set(&plainRuleData, "floating-constant", "${decimal-floating-constant} | ${hexadecimal-floating-constant}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "floating-constant", "${decimal-floating-constant} | ${hexadecimal-floating-constant}"));
 
     // Enumeration constant,
-    NCC_addRule(plainRuleData.set(&plainRuleData, "enumeration-constant", "${identifier}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "enumeration-constant", "${identifier}"));
 
     // Character constant (supporting unknown escape sequences which are implementation defined. We'll pass the escaped character like gcc and clang do),
     NCC_addRule(plainRuleData.set(&plainRuleData, "c-char", "\x01-\x09 | \x0b-\x5b | \x5d-\xff")); // All characters except new-line and backslash (\).
     NCC_addRule(plainRuleData.set(&plainRuleData, "c-char-with-backslash-without-uUxX", "\x01-\x09 | \x0b-\x54 | \x56-\x57| \x59-\x74 | \x76-\x77 | \x79-\xff")); // All characters except new-line, 'u', 'U', 'x' and 'X'.
     NCC_addRule(plainRuleData.set(&plainRuleData, "hexadecimal-escape-sequence", "\\\\x ${hexadecimal-digit} ${hexadecimal-digit}^*"));
-    NCC_addRule(plainRuleData.set(&plainRuleData, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '"));
 
     // Constant,
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "constant", "${integer-constant} | ${floating-constant} | ${enumeration-constant} | ${character-constant}"));
+    //NCC_addRule(pushingRuleData.set(&pushingRuleData, "constant", "${integer-constant} | ${floating-constant} | ${enumeration-constant} | ${character-constant}"));
+    //NCC_addRule(pushingRuleData.set(&pushingRuleData, "constant", "#{{integer-constant} {floating-constant} {enumeration-constant} {character-constant}}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "constant", "${PSH C2} #{{integer-constant} {floating-constant} {enumeration-constant} {character-constant}} ${POP C}"));
 
     // String literal,
     // See: https://stackoverflow.com/a/13087264/1942069   and   https://stackoverflow.com/a/13445170/1942069
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "string-literal-fragment", "{u8}|u|U|L|${ε} \" { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* \""));
-    NCC_addRule(pushingRuleData.set(&pushingRuleData, "string-literal", "${string-literal-fragment} {${} ${string-literal-fragment}}|${ε}"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData, "string-literal", "${PSH C3} ${string-literal-fragment} {${} ${string-literal-fragment}}|${ε} ${POP C}"));
 
     // =====================================
     // Phrase structure,
@@ -288,7 +307,7 @@ void defineLanguage(struct NCC* ncc) {
                                        "${postfix-expression-contents} {"
                                        "   {${} ${[}  ${} ${expression} ${} ${]} } | "
                                        "   {${} ${(}  ${} ${argument-expression-list}|${ε} ${} ${)} } | "
-                                       "   {${} ${.}  ${} ${identifier}} | "
+                                       "   {${} ${.}  ${} ${PSH C4} ${identifier} ${POP C}} | "
                                        "   {${} ${->} ${} ${identifier}} | "
                                        "   {${} ${++} } | "
                                        "   {${} ${--} }"
@@ -309,9 +328,9 @@ void defineLanguage(struct NCC* ncc) {
                                        "{ ${++} ${} ${unary-expression} } | "
                                        "{ ${--} ${} ${unary-expression} } | "
                                        "{ ${unary-operator} ${} ${cast-expression} } | "
-                                       "{   ${sizeof} ${} ${(} ${} ${unary-expression} ${} ${)} } | "
-                                       "{   ${sizeof} ${} ${(} ${} ${type-name}        ${} ${)} } | "
-                                       "{ ${_Alignof} ${} ${(} ${} ${type-name}        ${} ${)} }"));
+                                       "{ ${PSH C1}   ${sizeof} ${POP C} ${} ${(} ${} ${unary-expression} ${} ${)} } | "
+                                       "{ ${PSH C1}   ${sizeof} ${POP C} ${} ${(} ${} ${type-name}        ${} ${)} } | "
+                                       "{ ${PSH C1} ${_Alignof} ${POP C} ${} ${(} ${} ${type-name}        ${} ${)} }"));
 
     // Unary operator,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "unary-operator", "#{{&}{*}{+}{-}{~}{!} {&&}{++}{--} != {&&}{++}{--}}"));
@@ -453,24 +472,24 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enum-specifier", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "typedef-name", "STUB!"));
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "type-specifier",
-                                       "#{{void}     {char}            "
-                                       "  {short}    {int}      {long} "
-                                       "  {float}    {double}          "
-                                       "  {signed}   {unsigned}        "
-                                       "  {_Bool}    {_Complex}        "
-                                       "  {atomic-type-specifier}      "
-                                       "  {struct-or-union-specifier}  "
-                                       "  {enum-specifier}             "
-                                       "  {typedef-name}               "
-                                       "  {identifier} != {identifier}}"));
+                                       "${PSH C1} #{{void}     {char}                    "
+                                       "            {short}    {int}      {long}         "
+                                       "            {float}    {double}                  "
+                                       "            {signed}   {unsigned}                "
+                                       "            {_Bool}    {_Complex}                "
+                                       "            {atomic-type-specifier}              "
+                                       "            {struct-or-union-specifier}          "
+                                       "            {enum-specifier}                     "
+                                       "            {typedef-name}                       "
+                                       "            {identifier} != {identifier}} ${POP C}"));
 
     // Struct or union specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-or-union", "STUB!"));
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "struct-declaration-list", "STUB!"));
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "struct-or-union-specifier",
                                        "${struct-or-union} ${+ }"
-                                       "{${identifier}|${ε} ${+ } ${OB} ${+\n} ${} ${struct-declaration-list} ${} ${CB} } | "
-                                       " ${identifier}"));
+                                       "{{${PSH C5} ${identifier} ${POP C}}|${ε} ${PSH C0} ${+ } ${OB} ${+\n} ${} ${struct-declaration-list} ${} ${CB} ${POP C}} | "
+                                       " {${PSH C5} ${identifier} ${POP C}}"));
 
     // Struct or union,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "struct-or-union",
@@ -504,8 +523,8 @@ void defineLanguage(struct NCC* ncc) {
 
     // Struct declarator,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "struct-declarator",
-                                       " ${declarator} | "
-                                       "{${declarator}|${ε} ${} ${:} ${+ } ${constant-expression}}"));
+                                       " {${PSH C6} ${declarator} ${POP C}} | "
+                                       "{{${PSH C6} ${declarator} ${POP C}}|${ε} ${} ${:} ${+ } ${constant-expression}}"));
 
     // Enum specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enumerator-list", "STUB!"));
@@ -562,7 +581,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Pointer,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "pointer",
-                                       "${pointer*} ${} ${type-qualifier-list}|${ε} ${} ${pointer}|${ε}"));
+                                       "${PSH C0} ${pointer*} ${POP C} ${} ${type-qualifier-list}|${ε} ${} ${pointer}|${ε}"));
 
     // Type qualifier list,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "type-qualifier-list",
@@ -702,22 +721,22 @@ void defineLanguage(struct NCC* ncc) {
 
     // Selection statement,
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "selection-statement",
-                                       "{ ${if}     ${} ${(} ${} ${expression} ${} ${)} ${} ${statement} {${} ${else} ${} ${statement}}|${ε} } | "
-                                       "{ ${switch} ${} ${(} ${} ${expression} ${} ${)} ${} ${statement}                                     }"));
+                                       "{ ${PSH C1} ${if}     ${POP C} ${} ${(} ${} ${expression} ${} ${)} ${} ${statement} {${} ${else} ${} ${statement}}|${ε} } | "
+                                       "{ ${PSH C1} ${switch} ${POP C} ${} ${(} ${} ${expression} ${} ${)} ${} ${statement}                                     }"));
 
     // Iteration statement,
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "iteration-statement",
-                                       "{ ${while} ${+ }                           ${(} ${} ${expression} ${} ${)} ${} ${;}|{${+ } ${statement}} } | "
-                                       "{ ${do}    ${+ } ${statement} ${} ${while} ${(} ${} ${expression} ${} ${)} ${} ${;}                      } | "
-                                       "{ ${for}   ${+ } ${(} ${} ${expression}|${ε} ${} ${;} ${+ } ${expression}|${ε} ${} ${;} ${+ } ${expression}|${ε} ${} ${)} ${} ${;}|{${+ } ${statement}} } | "
-                                       "{ ${for}   ${+ } ${(} ${} ${declaration}              ${+ } ${expression}|${ε} ${} ${;} ${+ } ${expression}|${ε} ${} ${)} ${} ${;}|{${+ } ${statement}} }"));
+                                       "{ ${PSH C1} ${while} ${POP C} ${+ }                           ${(} ${} ${expression} ${} ${)} ${} ${;}|{${+ } ${statement}} } | "
+                                       "{ ${PSH C1} ${do}    ${POP C} ${+ } ${statement} ${} ${while} ${(} ${} ${expression} ${} ${)} ${} ${;}                      } | "
+                                       "{ ${PSH C1} ${for}   ${POP C} ${+ } ${(} ${} ${expression}|${ε} ${} ${;} ${+ } ${expression}|${ε} ${} ${;} ${+ } ${expression}|${ε} ${} ${)} ${} ${;}|{${+ } ${statement}} } | "
+                                       "{ ${PSH C1} ${for}   ${POP C} ${+ } ${(} ${} ${declaration}              ${+ } ${expression}|${ε} ${} ${;} ${+ } ${expression}|${ε} ${} ${)} ${} ${;}|{${+ } ${statement}} }"));
 
     // Jump statement,
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "jump-statement",
-                                       "{ ${goto}     ${} ${identifier}      ${} ${;} } | "
-                                       "{ ${continue} ${}                        ${;} } | "
-                                       "{ ${break}    ${}                        ${;} } | "
-                                       "{ ${return}   ${} ${expression}|${ε} ${} ${;} }"));
+                                       "{ ${PSH C1} ${goto}     ${POP C} ${} ${identifier}      ${} ${;} } | "
+                                       "{ ${PSH C1} ${continue} ${POP C} ${}                        ${;} } | "
+                                       "{ ${PSH C1} ${break}    ${POP C} ${}                        ${;} } | "
+                                       "{ ${PSH C1} ${return}   ${POP C} ${} ${expression}|${ε} ${} ${;} }"));
 
     // -------------------------------------
     // External definitions,
