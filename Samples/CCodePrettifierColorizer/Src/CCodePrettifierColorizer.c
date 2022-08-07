@@ -17,12 +17,14 @@
 struct PrettifierData {
     struct NString outString;
     struct NVector colorStack; // const char*
+    const char* lastUsedColor;
     int32_t indentationCount;
 };
 
 static void initializePrettifierData(struct PrettifierData* prettifierData) {
     NString.initialize(&prettifierData->outString, "");
     NVector.initialize(&prettifierData->colorStack, 0, sizeof(const char*));
+    prettifierData->lastUsedColor = 0;
     prettifierData->indentationCount = 0;
 }
 
@@ -42,11 +44,16 @@ static void prettifierAppend(struct PrettifierData* prettifierData, const char* 
 
     // Add color,
     if (!(NCString.equals(text, " ") || NCString.equals(text, "\n"))) {
+        const char* color;
         if (NVector.size(&prettifierData->colorStack)) {
-            const char* color = *(const char**) NVector.getLast(&prettifierData->colorStack);
-            NString.append(&prettifierData->outString, "%s", color);
+            color = *(const char**) NVector.getLast(&prettifierData->colorStack);
         } else {
-            NString.append(&prettifierData->outString, "%s", NTCOLOR(STREAM_DEFAULT));
+            color = NTCOLOR(STREAM_DEFAULT);
+        }
+        // Print color only if it's different from last color used,
+        if (color != prettifierData->lastUsedColor) {
+            NString.append(&prettifierData->outString, "%s", color);
+            prettifierData->lastUsedColor = color;
         }
     }
 

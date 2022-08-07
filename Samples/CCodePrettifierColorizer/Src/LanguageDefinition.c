@@ -123,6 +123,7 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(pushingRuleData.set(&pushingRuleData,       "pointer*",            "\\*"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData,         "struct",         "struct"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData,          "union",          "union"));
+    NCC_addRule(pushingRuleData.set(&pushingRuleData,           "enum",           "enum"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData,         "sizeof",         "sizeof"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData,             "if",             "if"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData,           "else",           "else"));
@@ -508,7 +509,7 @@ void defineLanguage(struct NCC* ncc) {
 
     // Specifier qualifier list,
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "specifier-qualifier-list",
-                                       "#{{type-specifier} {type-qualifier}}"
+                                       "${PSH C1} #{{type-specifier} {type-qualifier}} ${POP C}"
                                        "{${+ } ${specifier-qualifier-list}}|${ε}"));
 
     // Struct declarator list,
@@ -526,8 +527,8 @@ void defineLanguage(struct NCC* ncc) {
     // Enum specifier,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enumerator-list", "STUB!"));
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "enum-specifier",
-                                       "{ enum ${} ${identifier}|${ε} ${} ${OB} ${enumerator-list} ${} ${,}|${ε} ${} ${CB} } | "
-                                       "{ enum ${} ${identifier} }"));
+                                       "{ ${enum} ${} ${identifier}|${ε} ${} ${OB} ${enumerator-list} ${} ${,}|${ε} ${} ${CB} } | "
+                                       "{ ${enum} ${} ${identifier} }"));
 
     // Enumerator list,
     NCC_addRule   (  plainRuleData.set(&  plainRuleData, "enumerator", "STUB!"));
