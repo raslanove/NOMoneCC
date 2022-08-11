@@ -106,7 +106,6 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
         int32_t childrenCount = NVector.size(&tree->childNodes);
         if (childrenCount) {
             // Not a leaf, print children,
-            int32_t childrenCount = NVector.size(&tree->childNodes);
             for (int32_t i=0; i<childrenCount; i++) printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData);
         } else {
             // Leaf node,
