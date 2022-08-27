@@ -81,6 +81,12 @@ struct NCC {
     struct NVector rules; // Pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
     struct NCC_Rule* matchRule;
     struct NVector* astNodeStacks[NCC_AST_NODE_STACKS_COUNT]; // NCC_ASTNode_Data. To be able to discard nodes that are not needed.
+
+    // Error reporting,
+    struct NVector parentStack; // struct NCC_Node*.
+    struct NVector maxMatchRuleStack; // const char*
+    int32_t maxMatchLength;
+    const char* textBeginning;
 };
 
 struct NCC_ASTNode_Data {

@@ -470,12 +470,18 @@ struct OrNodeData {
 static boolean orNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct OrNodeData* nodeData = node->data;
 
+    // Push this node as a parent to the rhs and lhs,
+    NVector.pushBack(&ncc->parentStack, &node);
+
     // Match the sides on temporary stacks,
     // Right hand side,
     MatchTree(rhs, nodeData->rhsTree, text, astParentNode, astNodeStacks[1], 0, {&rhs}, 1)
 
     // Left hand side,
     MatchTree(lhs, nodeData->lhsTree, text, astParentNode, astNodeStacks[2], 0, {&rhs COMMA &lhs}, 2)
+
+    // Remove this node from the parent stack,
+    NVector.popBack(&ncc->parentStack, &node);
 
     // If neither right or left matches,
     if ((!rhsMatched) && (!lhsMatched)) {
@@ -638,7 +644,9 @@ static boolean subRuleNodeMatch(struct NCC_Node* node, struct NCC* ncc, const ch
     struct SubRuleNodeData* nodeData = node->data;
 
     // Match sub-rule on a temporary stack,
+    NVector.pushBack(&ncc->parentStack, &node);
     MatchTree(subRule, nodeData->subRuleTree, text, astParentNode, astNodeStacks[1], 0, {&subRule}, 1)
+    NVector.popBack(&ncc->parentStack, &node);
     if (!subRuleMatched) {
         *outResult = subRule.result;
         return False;
@@ -750,7 +758,9 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
 
     // If there's no following subrule, match as much as you can, and always return True,
     if (!node->nextNode) {
+        NVector.pushBack(&ncc->parentStack, &node);
         MatchTree(repeatedNode, nodeData->repeatedNode, text, astParentNode, astNodeStacks[1], 0, {&repeatedNode}, 1)
+        NVector.popBack(&ncc->parentStack, &node);
         if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
             if (repeatedNodeMatched) DiscardTree(&repeatedNode)
             NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
@@ -780,7 +790,9 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
     if (followingSubRuleMatched && followingSubRule.result.matchLength != 0) return True;
 
     // Following sub-rule didn't match, attempt repeating (on the temporary stack),
+    NVector.pushBack(&ncc->parentStack, &node);
     MatchTree(repeatedNode, nodeData->repeatedNode, text, astParentNode, astNodeStacks[1], 0, {&followingSubRule COMMA &repeatedNode}, 2)
+    NVector.popBack(&ncc->parentStack, &node);
     if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
         if (repeatedNodeMatched) DiscardTree(&repeatedNode)
         if (followingSubRuleMatched) return True;
@@ -952,9 +964,11 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
 
     // Match rule on a temporary stack,
     struct MatchedTree rule;
+    NVector.pushBack(&ncc->parentStack, &node);
     accepted = matchTree(ncc, nodeData->rule->tree, text,
                          &rule, newAstNodeCreated ? &newAstNode : astParentNode, &ncc->astNodeStacks[1],
                          0, 0, 0);
+    NVector.popBack(&ncc->parentStack, &node);
     if (rule.result.terminate || !accepted) {
         *outResult = rule.result;
         discardRule = accepted;
@@ -982,6 +996,7 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
 
         // Proceed or conclude based on the returned values,
         if (matchingData.terminate || !accepted) {
+            *outResult = rule.result;
             outResult->terminate = matchingData.terminate;
             outResult->matchLength = matchingData.matchLength;
             goto finish;
@@ -989,6 +1004,31 @@ static boolean substituteNodeMatch(struct NCC_Node* node, struct NCC* ncc, const
 
         rule.result.matchLength = matchingData.matchLength;
         rule.result.terminate = False;
+    }
+
+    // Confirmed match, collect information about match for error reporting,
+    int32_t totalMatchLength = rule.result.matchLength + (((intptr_t) text) - ((intptr_t) ncc->textBeginning));
+    if (totalMatchLength > ncc->maxMatchLength) {
+        ncc->maxMatchLength = totalMatchLength;
+
+        // Copy the parent stack rules into the max match stack (only the substitute nodes),
+        NVector.clear(&ncc->maxMatchRuleStack);
+        int32_t parentNodesCount = NVector.size(&ncc->parentStack);
+        for (int32_t i=0; i<parentNodesCount; i++) {
+            struct NCC_Node* currentParentNode = *(struct NCC_Node**) NVector.get(&ncc->parentStack, i);
+            if (currentParentNode->type == NCC_NodeType.SUBSTITUTE) {
+                struct SubstituteNodeData *nodeData = currentParentNode->data;
+                const char* ruleName = NString.get(&nodeData->rule->data.ruleName);
+                NVector.pushBack(&ncc->maxMatchRuleStack, &ruleName);
+            }
+        }
+
+        // Add this node to the stack,
+        const char* ruleName = NString.get(&nodeData->rule->data.ruleName);
+        NVector.pushBack(&ncc->maxMatchRuleStack, &ruleName);
+
+        // Set the expected next node as well (if no next, check parent stack next),
+        // TODO: implement node.toString() ...
     }
 
     // Match next nodes,
@@ -1105,8 +1145,8 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
 
     int32_t currentNodeStackIndex=1;
     struct MatchedTree longestMatchRule;
-    int maxMatchLength=0;
     boolean foundMatch=False;
+    outResult->matchLength = -1;
 
     int32_t attemptedRulesCount = NVector.size(&nodeData->attemptedRules);
     for (int32_t i=0; i<attemptedRulesCount; i++) {
@@ -1114,9 +1154,11 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
 
         // Matching through a substitute node, this way the top-most rule can be pushed,
         ((struct SubstituteNodeData*) nodeData->substituteNode->data)->rule = rule;
+        NVector.pushBack(&ncc->parentStack, &node);
         MatchTree(token, nodeData->substituteNode, text, astParentNode, astNodeStacks[currentNodeStackIndex], 0, {&token}, 1)
+        NVector.popBack(&ncc->parentStack, &node);
 
-        if (!foundMatch && token.result.matchLength > maxMatchLength) maxMatchLength = token.result.matchLength;
+        if (!foundMatch && token.result.matchLength > outResult->matchLength) *outResult = token.result;
         if (!tokenMatched) continue;
 
         // Check if multiple AST nodes where pushed,
@@ -1151,8 +1193,7 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
 
     // Return immediately if no match found,
     if (!foundMatch) {
-        NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
-        outResult->matchLength = maxMatchLength;
+        if (outResult->matchLength==-1) NSystemUtils.memset(outResult, 0, sizeof(struct NCC_MatchingResult));
         return False;
     }
 
@@ -1443,7 +1484,9 @@ static boolean matchTree(
 #define NCC_MATCH_RULE_NAME "_NCC_match()_"
 struct NCC* NCC_initializeNCC(struct NCC* ncc) {
     ncc->extraData = 0;
-    NVector.initialize(&ncc->rules, 0, sizeof(struct NCC_Rule*));
+    NVector.initialize(&ncc->rules            , 0, sizeof(struct NCC_Rule*));
+    NVector.initialize(&ncc->parentStack      , 0, sizeof(struct NCC_Node*));
+    NVector.initialize(&ncc->maxMatchRuleStack, 0, sizeof(const char*));
     for (int32_t i=0; i<NCC_AST_NODE_STACKS_COUNT; i++) ncc->astNodeStacks[i] = NVector.create(0, sizeof(struct NCC_ASTNode_Data));
 
     // Create a rule to make the matching function a lot simpler,
@@ -1468,6 +1511,8 @@ void NCC_destroyNCC(struct NCC* ncc) {
     NVector.destroy(&ncc->rules);
 
     // Stacks,
+    NVector.destroy(&ncc->parentStack);
+    NVector.destroy(&ncc->maxMatchRuleStack);
     for (int32_t i=0; i<NCC_AST_NODE_STACKS_COUNT; i++) NVector.destroyAndFree(ncc->astNodeStacks[i]);
 }
 
@@ -1563,6 +1608,12 @@ boolean NCC_setRootRule(struct NCC* ncc, const char* ruleName) {
 
 boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult, struct NCC_ASTNode_Data* outNode) {
 
+    // Prepare for matching,
+    ncc->maxMatchLength = 0;
+    ncc->textBeginning = text;
+    NVector.clear(&ncc->maxMatchRuleStack);
+
+    // Match,
     struct MatchedTree ruleTree;
     boolean matched = matchTree(ncc, ncc->matchRule->tree, text,
                                 &ruleTree, 0, &ncc->astNodeStacks[0],
