@@ -758,7 +758,8 @@ void defineLanguage(struct NCC* ncc) {
     NCC_updateRule(pushingRuleData.set(&pushingRuleData, "function-definition",
                                        "${declaration-specifiers} ${+ } ${declarator} ${} ${declaration-list}|${ε} ${+ } ${compound-statement} ${+\n}"));
 
-    // Declaration list,
+    // Declaration list (for K&R function definition style. See: https://stackoverflow.com/a/18820829/1942069 ),
+    //   Example: int foo(a,b) int a, b; {}
     NCC_updateRule(  plainRuleData.set(&  plainRuleData, "declaration-list",
                                        "${declaration} {"
                                        "   ${} ${declaration}"
