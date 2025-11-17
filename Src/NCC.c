@@ -10,14 +10,31 @@
 #endif
 
 //
-// Operation:
-//   First, we construct our rules. Then, we match, firing listeners as we proceed.
-//     - Create node listener: Given the rule, construct your AST node and return it.
-//     - Delete node listener: The node created in the previous step is not final. It could be rolled back.
-//                             Be ready to do so if this listener is fired.
-//     - Match       listener: Once the node and its children are constructed, this is fired. At this point,
-//                             you may inspect the node and decide if you'll accept this match.
+// You might want to read the documentation in NCC.h before reading this.
 //
+
+// We have 2 types of trees:
+//   - Rule tree:
+//       => The product of parsing rule text. It's what language definition is all about.
+//       => Implementation detail, totally transparent to the user. A user may as well not know they
+//          exist at all.
+//       => Can have sub-trees. When a text is matched, it goes through a specific path through the tree.
+//       => The result of matching text is simple:
+//            -> Whether matching was successful or not.
+//            -> The length of the matched text.
+//          Sometimes this is not very useful, as it doesn't give much information about the match.
+//          That's where ASTs come into play, to identify the exact path that the text took through
+//          our rule tree.
+//   - AST:
+//       => As we define our rules, we can also provide listeners to create/delete AST nodes. These
+//          nodes detail the path which the subject text took while propagating through our rule tree.
+//       => Users have to parse these manually, or implement their logic in the AST node match listeners.
+//
+// In our implementation, trees nodes are regular graph nodes. However, we as we construct AST tree
+// nodes, we also push them to stacks. This makes it easier to cull an entire branch of the tree
+// (roll it back) if we took a wrong turn while matching. Lots of the matching is based on trial. If
+// a path fails, we cull its branch and try the next one. If multiple paths match, we take the
+// longest match and cull the others.
 
 static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule);
 static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule);
@@ -72,7 +89,7 @@ const struct NCC_NodeType NCC_NodeType = {
     .REPEAT = 5,
     .ANYTHING = 6,
     .SUBSTITUTE = 7,
-    .TOKEN = 8
+    .TOKEN = 8     // TODO: rename to selection...
 };
 
 struct NCC_Node {
@@ -128,7 +145,7 @@ typedef struct NCC_Node* (*NCC_Node_getPreviousNode)(struct NCC_Node* node);
 typedef struct NCC_Node* (*NCC_Node_getNextNode    )(struct NCC_Node* node);
 typedef void             (*NCC_Node_deleteTree     )(struct NCC_Node* tree);
 
-//                                                       Root                     Literals                Literals range             Or                      Sub-rule                Repeat                  Anything                Substitute
+//                                                       Root                     Literals                Literals range             Or                      Sub-rule                Repeat                  Anything                Substitute                Selection
 static NCC_Node_match           nodeMatch          [] = {rootNodeMatch          , literalsNodeMatch     , literalRangeNodeMatch    , orNodeMatch           , subRuleNodeMatch      , repeatNodeMatch       , anythingNodeMatch     , substituteNodeMatch     , tokenNodeMatch        };
 static NCC_Node_setPreviousNode nodeSetPreviousNode[] = {rootNodeSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode   , genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode, genericSetPreviousNode  , genericSetPreviousNode};
 static NCC_Node_setNextNode     nodeSetNextNode    [] = {genericSetNextNode     , genericSetNextNode    , genericSetNextNode       , genericSetNextNode    , genericSetNextNode    , genericSetNextNode    , genericSetNextNode    , genericSetNextNode      , genericSetNextNode    };
@@ -192,7 +209,9 @@ static struct NCC_Rule* createRule(struct NCC_RuleData* ruleData) {
     struct NCC_Rule* rule = NMALLOC(sizeof(struct NCC_Rule), "NCC.createRule() rule");
     rule->tree = ruleTree;
     rule->data = *ruleData;  // Copy all members. But note that, copying strings is dangerous due
-                             // to memory allocations. They have to be handled manually.
+                             // to memory allocations. For every string in ruleData, we now have
+                             // two NStrings pointing to the same memory block.
+    // Just create new NStrings overwriting the ones we just copied,
     const char* ruleName = NString.get(&ruleData->ruleName);
     NString.initialize(&ruleData->ruleName, "%s", ruleName);
     NString.initialize(&ruleData->ruleText, "%s", ruleText);
@@ -774,7 +793,7 @@ static boolean repeatNodeMatch(struct NCC_Node* node, struct NCC* ncc, const cha
             return True;
         }
 
-        // TODO: is the order important? If it's not, can't we do this iteratively? If the root nood contains too many
+        // TODO: is the order important? If it's not, can't we do this iteratively? If the root node contains too many
         //       repeats, won't that cause an overflow?
         PushTree(repeatedNode)
         return True;
@@ -1140,11 +1159,13 @@ struct TokenNodeData {
     boolean matchIfIncluded; // Accept rule if the matched rule is included in the verification rules.
 };
 
+// TODO: rename...
 static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char* text, struct NCC_ASTNode_Data* astParentNode, struct NCC_MatchingResult* outResult) {
     struct TokenNodeData *nodeData = node->data;
 
     int32_t currentNodeStackIndex=1;
     struct MatchedTree longestMatchRule;
+    const char* longestMatchRuleName=0;
     boolean foundMatch=False;
     outResult->matchLength = -1;
 
@@ -1180,6 +1201,7 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
             if (token.result.matchLength > longestMatchRule.result.matchLength) {
                 DiscardTree(&longestMatchRule)
                 longestMatchRule = token;
+                longestMatchRuleName = NString.get(&rule->data.ruleName);
                 currentNodeStackIndex = 3 - currentNodeStackIndex;  // Switch to the other stack.
             } else {
                 DiscardTree(&token)
@@ -1187,6 +1209,7 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
         } else {
             foundMatch = True;
             longestMatchRule = token;
+            longestMatchRuleName = NString.get(&rule->data.ruleName);
             currentNodeStackIndex = 3 - currentNodeStackIndex;  // Switch to the other stack.
         }
     }
@@ -1197,38 +1220,22 @@ static boolean tokenNodeMatch(struct NCC_Node* node, struct NCC* ncc, const char
         return False;
     }
 
-    // Check whether the matched rule pushed anything,
-    int32_t pushedNodesCount = NVector.size(*longestMatchRule.astNodesStack) - longestMatchRule.stackMark;
-    if (pushedNodesCount) {
-
-        // Get the matched AST node,
-        struct NCC_ASTNode_Data* matchedASTNode = NVector.getLast(*longestMatchRule.astNodesStack);
-        const char* matchedASTNodeRuleName = NString.get(&matchedASTNode->rule->ruleName);
-
-        // Verify,
-        boolean matchFound = False;
-        int32_t verificationRulesCount = NVector.size(&nodeData->verificationRules);
-        for (int32_t i=0; i<verificationRulesCount; i++) {
-            struct NCC_Rule* rule = *(struct NCC_Rule**) NVector.get(&nodeData->verificationRules, i);
-            if (NCString.equals(matchedASTNodeRuleName, NString.get(&rule->data.ruleName))) {
-                matchFound = True;
-                break;
-            }
+    // Verify,
+    boolean matchFound = False;
+    int32_t verificationRulesCount = NVector.size(&nodeData->verificationRules);
+    for (int32_t i=0; i<verificationRulesCount; i++) {
+        struct NCC_Rule* rule = *(struct NCC_Rule**) NVector.get(&nodeData->verificationRules, i);
+        if (NCString.equals(longestMatchRuleName, NString.get(&rule->data.ruleName))) {
+            matchFound = True;
+            break;
         }
+    }
 
-        // Either match found when it shouldn't or no match found when it should,
-        if (matchFound ^ nodeData->matchIfIncluded) {
-            *outResult = longestMatchRule.result;
-            DiscardTree(&longestMatchRule)
-            return False;
-        }
-    } else {
-
-        // No AST nodes where pushed,
-        if (nodeData->matchIfIncluded) {
-            *outResult = longestMatchRule.result;
-            return False;
-        }
+    // Either match found when it shouldn't or no match found when it should,
+    if (matchFound ^ nodeData->matchIfIncluded) {
+        *outResult = longestMatchRule.result;
+        DiscardTree(&longestMatchRule)
+        return False;
     }
 
     // Verified, match next node,
@@ -1266,6 +1273,8 @@ static struct NCC_Node* createTokenNode(struct NCC* ncc, struct NCC_Node* parent
 
     // Skip the '#'.
     const char* ruleBeginning = (*in_out_rule)++;
+
+    // TODO: allow having $ or @ before individual subrules, to indicate pushing/non-pushing...
 
     // Skip the '{',
     if (*((*in_out_rule)++) != '{') {
@@ -1331,7 +1340,7 @@ static struct NCC_Node* createTokenNode(struct NCC* ncc, struct NCC_Node* parent
                 matchingModeSet = True;
                 nodeData->matchIfIncluded = (currentChar == '=');
             } else {
-                NERROR("NCC", "createTokenNode(): expected %s%c=%s, found %s=%c%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), nextChar, NTCOLOR(STREAM_DEFAULT));
+                NERROR("NCC", "createTokenNode(): expected %s%c=%s, found %s%c%c%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, nextChar, NTCOLOR(STREAM_DEFAULT));
                 goto finish;
             }
         } else if (!currentChar) {
@@ -1372,6 +1381,7 @@ static struct NCC_Node* createTokenNode(struct NCC* ncc, struct NCC_Node* parent
 // Helper functions
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Constructs a rule tree from rule text,
 static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule) {
 
     struct NCC_Node* rootNode = createRootNode();
@@ -1390,15 +1400,22 @@ static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule) {
     return 0;
 }
 
+// Identifies and creates the next rule tree node from the rule text. "in_out_rule" will be modified
+// to point after the returned node text. This function is used to systematically parse rule text
+// into a rule tree,
 static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
 
     char currentChar;
+    // TODO: add tabs too?
     while ((currentChar = **in_out_rule) == ' ') (*in_out_rule)++;
 
     switch (currentChar) {
         case   0: return 0;
         case '#': return createTokenNode(ncc, parentNode, in_out_rule);
         case '$': return createSubstituteNode(ncc, parentNode, in_out_rule);
+
+        // TODO: add '@' to create a non-pushing (silent) substitute node...
+
         case '*': return createAnythingNode(ncc, parentNode, in_out_rule);
         case '{': return createSubRuleNode(ncc, parentNode, in_out_rule);
         case '^': return createRepeatNode(ncc, parentNode, in_out_rule);

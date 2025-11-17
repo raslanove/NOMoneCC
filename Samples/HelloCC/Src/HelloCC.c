@@ -217,29 +217,61 @@ void NMain() {
     NCC_initializeNCC(&ncc);
     assert(&ncc, "Comment"      , "/\\**\\*/", "/*besm Allah*/", True, 14, False);
     assert(&ncc, "TwoComments"  , "${Comment},${Comment}", "/*first comment*/,/*second comment*/", True, 36, False);
-    assert(&ncc, "ThreeComments", "${TwoComments},${Comment}", "/*first comment*/,/*second comment*/,/*thirrrrrd comment*/", True, 58, True);
+    assert(&ncc, "ThreeComments", "${TwoComments},${Comment}", "/*first comment*/,/*second comment*/,/*thirrrrrd comment*/", True, 58, False);
     NCC_destroyNCC(&ncc);
 
     NCC_initializeNCC(&ncc);
     assert(&ncc, "Optional", "{ab}^*{cd}^*", "", True, 0, False);
     assert(&ncc, "Mandatory", "xyz", "xyz", True, 3, False);
-    assert(&ncc, "ContainingOptional", "${Optional}${Mandatory}", "xyz", True, 3, True);
+    assert(&ncc, "ContainingOptional", "${Optional}${Mandatory}", "xyz", True, 3, False);
     NCC_destroyNCC(&ncc);
 
     NCC_initializeNCC(&ncc);
     assert(&ncc, "Milestone", "", "", True, 0, False);
     assert(&ncc, "123", "123", "123", True, 3, False);
     assert(&ncc, "ActualRule1", "${123}${Milestone}${123}", "123123", True, 6, False);
-    assert(&ncc, "ActualRule2", "abc${ActualRule1}xyz", "abc123123xyz", True, 12, True);
+    assert(&ncc, "ActualRule2", "abc${ActualRule1}xyz", "abc123123xyz", True, 12, False);
     NCC_destroyNCC(&ncc);
 
     NCC_initializeNCC(&ncc);
     assert(&ncc, "Literal"        , "\x01-\xff", "", False, 0, False);
     assert(&ncc, "EscapedLiteral" , "\\\\${Literal}", "", False, 0, False);
     assert(&ncc, "String"         , "\" { ${Literal}|${EscapedLiteral} }^* \"", "", False, 0, False);
-    assert(&ncc, "StringContainer", "${String}", "\"besm Allah \\\" :)\"", True, 18, True);
+    assert(&ncc, "StringContainer", "${String}", "\"besm Allah \\\" :)\"", True, 18, False);
     NCC_destroyNCC(&ncc);
 
+    // Selection,
+    NCC_initializeNCC(&ncc);
+    assert(&ncc,   "class",     "class", "", False, 0, False);
+    assert(&ncc,    "enum",      "enum", "", False, 0, False);
+    assert(&ncc,      "if",        "if", "", False, 0, False);
+    assert(&ncc,    "else",      "else", "", False, 0, False);
+    assert(&ncc, "keyword", "#{{class} {enum} {if} {else}}", "if", True, 2, False);
+
+    assert(&ncc,             "digit",       "0-9", "", False, 0, False);
+    assert(&ncc,         "non-digit", "_|a-z|A-Z", "", False, 0, False);    
+    assert(&ncc,        "identifier", "${non-digit} {${digit} | ${non-digit}}^*", "", False, 0, False);
+    assert(&ncc,     "orderMatters1", "#{{identifier} {keyword}                }", "class" ,  True, 5, False);    
+    assert(&ncc,     "orderMatters2", "#{{keyword} {identifier}                }", "class" ,  True, 5, False);
+    assert(&ncc,    "verifyIncluded", "#{{keyword} {identifier} == {identifier}}", "class" , False, 5, False);
+    assert(&ncc, "verifyNotIncluded", "#{{keyword} {identifier} !=    {keyword}}", "class" , False, 5, False);
+    assert(&ncc,     "LongestMatch1", "#{{keyword} {identifier}                }", "class1",  True, 6, False);
+    assert(&ncc,     "LongestMatch2", "#{{keyword} {identifier} == {identifier}}", "class1",  True, 6, False);
+    assert(&ncc,     "LongestMatch3", "#{{keyword} {identifier} != {identifier}}", "class1", False, 6, False);
+    NCC_destroyNCC(&ncc);
+    
+    NCC_initializeNCC(&ncc);
+    assert(&ncc,  "+",      "+", "", False, 0, False);
+    assert(&ncc,  "-",    "\\-", "", False, 0, False);
+    assert(&ncc,  "~",      "~", "", False, 0, False);
+    assert(&ncc,  "!",      "!", "", False, 0, False);
+    assert(&ncc, "++",     "++", "", False, 0, False);
+    assert(&ncc, "--", "\\-\\-", "", False, 0, False);
+    
+    assert(&ncc, "unary-operator1", "#{{+}{-}{~}{!} {++}{--} == {+}{-}{~}{!}}", "++", False, 2, False);
+    assert(&ncc, "unary-operator2", "#{{+}{-}{~}{!} {++}{--} !=     {++}{--}}", "++", False, 2, False);
+    NCC_destroyNCC(&ncc);
+    
     // Stateful parsing,
     NLOGI("", "%s================%s"  , NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
     NLOGI("", "%sStateful Parsing%s"  , NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
@@ -279,24 +311,12 @@ void NMain() {
     NCC_addRule(ruleData.set(&ruleData, "specifier"  , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
     NCC_addRule(ruleData.set(&ruleData, "declaration", "${specifier} ${} ${identifier};")->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
     assert(&ncc, "RollBackTest", "${declaration}|${declaration}", "int a;", True, 6, True);
+    destroyDeclaredVariables();    
     NCC_destroyNCC(&ncc);
     NLOGI("", "");
 
     NVector.destroy(&declaredVariables);
     NCC_destroyRuleData(&ruleData);
-    
-    // Token,
-    /*
-    rule := {abc^*}abc123
-
-    abc    := {abc}
-    abc123 := {abc123}
-    token := ${abc}|${abc123}
-
-    rule := {#{token,abc}^*}abc123
-
-    abcabc123
-    */
-
+     
     NError.logAndTerminate();
 }
