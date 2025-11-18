@@ -53,7 +53,7 @@
 //
 // Reserved characters (must be escaped):
 //   \ | - ^ * { } $ #
-//   and whitespaces. If whitespaces are not escaped, they are ignored. You can use them to make rules look a lot cleaner.
+// and spaces/tabs. Spaces/Tabs that are not escaped are ignored. Feel free to use them to make rules look cleaner.
 //
 // TODO: add @ to reserved characters?
 

@@ -161,7 +161,13 @@ void NMain() {
     struct NCC ncc;
 
     // Literals,
-    assert(0, 0, "besm\\ Allah", "besm Allah", True, 10, False);
+    assert(0, 0,    "A",  "A", True, 1, False);
+    assert(0, 0,  "\\A",  "A", True, 1, False);    // The escape character is harmless.
+    assert(0, 0, "\\\\", "\\", True, 1, False);    // To match a single \, we need to write \\\\. That's because in NCC, \ must be escaped,
+                                                   // so we end up writing \\. Since our code is in C language, \\ stands for one \ only. To
+                                                   // write 2 \s, we need to escaped again. Hence, \\\\.
+    assert(0, 0, "besm    \t    Allah", "besm    \t    Allah", False, 0, False);  // Unescaped spaces/tabs in rule definitions are ignored.
+    assert(0, 0, "besm\\ Allah", "besm Allah", True, 10, False);                  // Escaped spaces/tabs in rule definitions are honored.
 
     // x-y
     assert(0, 0, "besm\\ Allah\\ a-z", "besm Allah x", True, 12, False);
@@ -282,7 +288,7 @@ void NMain() {
     NVector.initialize(&declaredVariables, 0, sizeof(NString));
 
     NCC_initializeNCC(&ncc);
-    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*"));
+    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\\\t|\r|\n}^*"));
     NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")         ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode,           NCC_matchASTNode));
     NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener,        declarationListener));
     NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode, validateAssignmentListener));
@@ -306,7 +312,7 @@ void NMain() {
 
     // Delete test,
     NCC_initializeNCC(&ncc);
-    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\t|\r|\n}^*")->setListeners(&ruleData, 0, 0, 0));
+    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\\\t|\r|\n}^*")->setListeners(&ruleData, 0, 0, 0));
     NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
     NCC_addRule(ruleData.set(&ruleData, "specifier"  , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
     NCC_addRule(ruleData.set(&ruleData, "declaration", "${specifier} ${} ${identifier};")->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));

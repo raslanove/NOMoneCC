@@ -18,7 +18,7 @@ static void specifyLanguage(struct NCC* ncc) {
 
     // Elements,
     addRule(ncc, "Empty", "", 0, False, True);
-    addRule(ncc, "WhiteSpace", "{\\ |\t|\r|\n}^*", 0, False, True);
+    addRule(ncc, "WhiteSpace", "{\\ |\\\t|\r|\n}^*", 0, False, True);
     addRule(ncc, "NotWhiteSpaceLiteral", "\x01-\x08 | \x0b-\x0c | \x0e-\x1f | \x21-\xff", 0, False, True);
     addRule(ncc, "LineEnd", "\n|${Empty}", 0, False, True);
     addRule(ncc, "LineComment", "//*${LineEnd}", 0, False, True);

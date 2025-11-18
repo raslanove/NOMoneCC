@@ -181,7 +181,7 @@ void defineLanguage(struct NCC* ncc) {
     // Spaces and comments,
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ε", ""));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-cont", "\\\\\n"));
-    NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\t|\r|\n|${line-cont}} {\\ |\t|\r|\n|${line-cont}}^*"));
+    NCC_addRule(  plainRuleData.set(&  plainRuleData, "white-space", "{\\ |\\\t|\r|\n|${line-cont}} {\\ |\\\t|\r|\n|${line-cont}}^*"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "line-comment", "${white-space} // {{* \\\\\n}^*} * \n|${ε}"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "block-comment", "${white-space} /\\* * \\*/"));
     NCC_addRule(  plainRuleData.set(&  plainRuleData, "ignorable", "#{{white-space} {line-comment} {block-comment}}"));

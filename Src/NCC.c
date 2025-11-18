@@ -1405,9 +1405,12 @@ static struct NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule) {
 // into a rule tree,
 static struct NCC_Node* getNextNode(struct NCC* ncc, struct NCC_Node* parentNode, const char** in_out_rule) {
 
-    char currentChar;
-    // TODO: add tabs too?
-    while ((currentChar = **in_out_rule) == ' ') (*in_out_rule)++;
+    // Skip unescaped spaces or tabs,
+    char currentChar = **in_out_rule;
+    while ((currentChar==' ') || (currentChar=='\t')) {
+        (*in_out_rule)++;
+        currentChar = **in_out_rule;
+    }
 
     switch (currentChar) {
         case   0: return 0;
