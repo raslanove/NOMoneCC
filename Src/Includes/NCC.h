@@ -27,11 +27,11 @@
 //
 // Node types:
 //   Literals:        abc
-//   Or:              |
 //   Literal range:   a-z
+//   Or:              |
 //   Repeat:          ^*
-//   Sub-rule:        ${name}
-//                    {rule}
+//   Sub-rule:        {ruleText}
+//   Substitute:      ${ruleName}
 //   Anything:        *
 //                    * followed by something
 //   Selection:       #{{rule1} {rule2} {rule3} ...etc}
@@ -39,23 +39,30 @@
 //                    #{{rule1} {rule2} {rule3} ...etc != {rule2} ...etc}
 //
 // Example rules:
-//   Literals     :         for             = for
-//   Literal range:         smallLetter     = a-z
-//   Or           :         letter          = a-z|A-Z
-//   Repeat       :         name            = A-Za-z^*
-//   Sub-rule     :         namesList       = {A-Za-z^*}|{{A-Za-z^*}{,A-Za-z^*}^*}
-//   Substitute   :         integer         = 1-90-9^*
-//                          integerPair     = ${integer},${integer}
-//   Anything     :         sentence        = *.
-//   Selection    :         keyword         = #{{class} {enum} {if} {else}}
-//                          identifier      = #{{keyword} {identifier-content} == {identifier-content}}
-//                          unary-operator  = #{{+}{-}{~}{!} {++}{--} != {++}{--}}
+// ╔═══════════════╤════════════════╤═══════════════════════════════════════════════════════════╗
+// ║ Node Type     │ Rule Name      │ Rule Text                                                 ║
+// ╟───────────────┼────────────────┼───────────────────────────────────────────────────────────╢
+// ║ Literals      │ for            │ for                                                       ║
+// ║ Literal range │ smallLetter    │ a-z                                                       ║
+// ║ Or            │ letter         │ a-z|A-Z                                                   ║
+// ║ Repeat        │ name           │ A-Za-z^*  // A name always starts with a capital letter.  ║
+// ║ Sub-rule      │ namesList      │ {A-Za-z^*} {,A-Za-z^*}^*                                  ║
+// ║ Substitute    │ integer        │ 0|{1-90-9^*}                                              ║
+// ║               │ integerPair    │ ${integer},${integer}                                     ║
+// ║ Anything      │ sentence       │ *.                                                        ║
+// ║ Selection     │ keyword        │ #{{class} {enum} {if} {else}}                             ║
+// ║               │ identifier     │ #{{keyword} {identifier-content} == {identifier-content}} ║
+// ║               │ unary-operator │ #{{+}{-}{~}{!} {++}{--} != {++}{--}}                      ║
+// ╚═══════════════╧════════════════╧═══════════════════════════════════════════════════════════╝
 //
 // Reserved characters (must be escaped):
 //   \ | - ^ * { } $ #
 // and spaces/tabs. Spaces/Tabs that are not escaped are ignored. Feel free to use them to make rules look cleaner.
 //
 // TODO: add @ to reserved characters?
+//        => Above.
+//        => NCC.isReserved()
+//        => NCC.getNextNode()
 
 // Details and limitations:
 // ========================
@@ -124,10 +131,19 @@
 // it (rhs). This effectively puts the next node within braces ({rhs}), hence exposing it to the
 // wildcard limitations.
 //
+// If both lhs and rhs match, the or node will select the one which results in the longest match,
+// not just the lhs and rhs node, but the entire tree. Example:
+//    rule: {ab}|{abc}cdef
+//    text: abcdef
+// This will match the entire text "abcdef". The or node will select the lhs, even though it's only
+// 2 characters long while the rhs is 3. This is because selecting the lhs will result in the entire
+// tree matching with length 6, while chosing the rhs will only match 3 characters.
+//
 // Selection nodes:
 // ----------------
-// Selection nodes can replace or nodes. They are particularly efficient when we are oring more than
-// 2 nodes. The backdraw is that all the ored nodes must all be substitute nodes. For example:
+// Selection nodes can replace or nodes placed in a subrule. They are particularly efficient when we
+// are oring more than 2 nodes. The backdraw is that all the ored nodes must all be substitute
+// nodes. For example:
 //    keyword = #{{class} {enum} {if} {else}}
 // This will match the rule with the longest match from the previously defined class/enum/if/else rules.
 //
@@ -172,81 +188,105 @@
 // NCC
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct NCC_RuleData;
-struct NCC_Rule;
+typedef struct NCC_RuleData NCC_RuleData;
+typedef struct NCC_Rule NCC_Rule;
 
+// We define 5 different stacks to be used while matching. That's the maximum number of stack we
+// needed to exist simultaneously so far,
 #define NCC_AST_NODE_STACKS_COUNT 5
+// Take the or node for instance:
+//    => astNodeStacks[0]: the main stack on which all nodes push their ASTs.
+//    => astNodeStacks[1]: rhs of the or node.
+//    => astNodeStacks[2]: lhs of the or node.
+//    => astNodeStacks[3]: the tree following the rhs of the or node.
+//    => astNodeStacks[4]: the tree following the lhs of the or node.
+//
+// While trying to find the longest match, the or node will try to match multiple paths, and will
+// only push some of them to stack 0. We could have used fewer stacks, but it really makes no
+// difference performance or memory wise, and separating them makes the logic much easier to
+// understand.
+//
+// After matching, the matched AST tree should always reside in astNodeStacks[0]. Before returning,
+// node Matching methods always restore the stacks they used to their previous state before
+// matching. astNodeStacks[0] is the only one that changes. matchRuleTree() swaps astNodeStacks[0]
+// with the one specified in the arguments, performs the match then restores the original order.
+// This way, node matching methods needn't worry about which stack to use, and can always rely on
+// index 0 being the main stack.
+
+
+// We won't create a typedef for NCC. Maybe at some point we'll declare a global interface name NCC
+// with all NCC relevant method, like we did for NVector and NString.
 struct NCC {
     void* extraData;
-    struct NVector rules; // Pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
+    struct NVector rules; // A vector of pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
     struct NCC_Rule* matchRule;
     struct NVector* astNodeStacks[NCC_AST_NODE_STACKS_COUNT]; // NCC_ASTNode_Data. To be able to discard nodes that are not needed.
 
     // Error reporting,
-    struct NVector parentStack; // struct NCC_Node*.
+    struct NVector parentStack; // NCC_Node*.
     struct NVector maxMatchRuleStack; // const char*
     int32_t maxMatchLength;
     const char* textBeginning;
 };
 
-struct NCC_ASTNode_Data {
+typedef struct NCC_ASTNode_Data {
     void* node;
-    struct NCC_RuleData* rule;
-};
+    NCC_RuleData* rule;
+} NCC_ASTNode_Data;
 
-struct NCC_MatchingResult {
+typedef struct NCC_MatchingResult {
     int32_t matchLength;
     boolean terminate;
-};
+} NCC_MatchingResult;
 
-struct NCC_MatchingData {
-    struct NCC_ASTNode_Data node;
+typedef struct NCC_MatchingData {
+    NCC_ASTNode_Data node;
     const char* matchedText;
     int32_t matchLength;
     boolean terminate;
-};
+} NCC_MatchingData;
 
-typedef void*   (*NCC_createNodeListener)(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* parentNode);
-typedef void    (*NCC_deleteNodeListener)(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode);
-typedef boolean (*NCC_matchListener)(struct NCC_MatchingData* matchingData);  // Returns true if node accepted. Also, may set the match length and the terminate fields.
+typedef void*   (*NCC_createASTNodeListener)(NCC_RuleData* ruleData, NCC_ASTNode_Data* parentNode);
+typedef void    (*NCC_deleteASTNodeListener)(NCC_ASTNode_Data* node, NCC_ASTNode_Data* parentNode);
+typedef boolean (*NCC_ruleMatchListener)(NCC_MatchingData* matchingData);  // Returns true if node accepted. Also, may set the match length and the terminate fields.
 
-struct NCC_RuleData {
+typedef struct NCC_RuleData {
     struct NCC* ncc;
     struct NString ruleName;
     struct NString ruleText;
-    NCC_createNodeListener createNodeListener;
-    NCC_deleteNodeListener deleteNodeListener;
-    NCC_matchListener matchListener;
-    struct NCC_RuleData* (*set)(struct NCC_RuleData* ruleData, const char* ruleName, const char* ruleText);
-    struct NCC_RuleData* (*setListeners)(struct NCC_RuleData* ruleData, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener);
-};
+    NCC_createASTNodeListener createASTNodeListener;
+    NCC_deleteASTNodeListener deleteASTNodeListener;
+    NCC_ruleMatchListener ruleMatchListener;
+    NCC_RuleData* (*set)(NCC_RuleData* ruleData, const char* ruleName, const char* ruleText);
+    NCC_RuleData* (*setListeners)(NCC_RuleData* ruleData, NCC_createASTNodeListener createASTNodeListener, NCC_deleteASTNodeListener deleteASTNodeListener, NCC_ruleMatchListener ruleMatchListener);
+} NCC_RuleData;
 
 struct NCC* NCC_initializeNCC(struct NCC* ncc);
 struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
 
-struct NCC_RuleData* NCC_initializeRuleData(struct NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createNodeListener createNodeListener, NCC_deleteNodeListener deleteNodeListener, NCC_matchListener matchListener);
-void NCC_destroyRuleData(struct NCC_RuleData* ruleData);
+NCC_RuleData* NCC_initializeRuleData(NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createASTNodeListener createNodeListener, NCC_deleteASTNodeListener deleteNodeListener, NCC_ruleMatchListener matchListener);
+void NCC_destroyRuleData(NCC_RuleData* ruleData);
 
-boolean NCC_addRule(struct NCC_RuleData* ruleData);
-boolean NCC_updateRule(struct NCC_RuleData* ruleData);
+boolean NCC_addRule(NCC_RuleData* ruleData);
+boolean NCC_updateRule(NCC_RuleData* ruleData);
 boolean NCC_setRootRule(struct NCC* ncc, const char* ruleName);
-boolean NCC_match(struct NCC* ncc, const char* text, struct NCC_MatchingResult* outResult, struct NCC_ASTNode_Data* outNode); // Returns True if matched. Sets outResult and outNode.
+boolean NCC_match(struct NCC* ncc, const char* text, NCC_MatchingResult* outResult, NCC_ASTNode_Data* outNode); // Returns True if matched. Sets outResult and outNode.
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Generic AST construction methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct NCC_ASTNode {
+typedef struct NCC_ASTNode {
     struct NString name, value;
     struct NVector childNodes;
-    struct NCC_RuleData* rule;
+    NCC_RuleData* rule;
     void* extraData;
-};
+} NCC_ASTNode;
 
-void*   NCC_createASTNode(struct NCC_RuleData* ruleData, struct NCC_ASTNode_Data* astParentNodeData);
-void    NCC_deleteASTNode(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* astParentNode);
-boolean NCC_matchASTNode (struct NCC_MatchingData* matchingData);
+void*   NCC_createASTNode(NCC_RuleData* ruleData, NCC_ASTNode_Data* astParentNodeData);
+void    NCC_deleteASTNode(NCC_ASTNode_Data* node, NCC_ASTNode_Data* astParentNode);
+boolean NCC_matchASTNode (NCC_MatchingData* matchingData);
 
-void NCC_ASTTreeToString(struct NCC_ASTNode* tree, struct NString* prefix, struct NString* outString, boolean printColored);
+void NCC_ASTTreeToString(NCC_ASTNode* tree, struct NString* prefix, struct NString* outString, boolean printColored);

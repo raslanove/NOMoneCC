@@ -190,20 +190,21 @@ void NMain() {
     assert(0, 0, "a{b|c}d", "abf", False, 2, False);
 
     // ^*
-    assert(0, 0, "a^*bc", "abc", True, 3, False);
-    assert(0, 0, "a^*bc", "bc", True, 2, False);
-    assert(0, 0, "a^*bc", "aaaaabc", True, 7, False);
-    assert(0, 0, "a^*", "aaaaa", True, 5, False);
-    assert(0, 0, "123a^*", "123aaaaa", True, 8, False);
-    assert(0, 0, "123a^*456", "123a456", True, 7, False);
-    assert(0, 0, "123a^*456", "123456", True, 6, False);
-    assert(0, 0, "123{ab}^*456", "123ababab456", True, 12, False);
-    assert(0, 0, "{ab}^*{cd}^*", "x", True, 0, False);
-    assert(0, 0, "x{ab}^*{cd}^*", "x", True, 1, False);
-    assert(0, 0, "x{ab}^*{cd}^*", "xab", True, 3, False);
-    assert(0, 0, "x{ab}^*{cd}^*", "xcd", True, 3, False);
-    assert(0, 0, "{xyz}^*xyz", "xyzxyzxyz", True, 3, False);
-    assert(0, 0, "{{xyz}^*}xyz", "xyzxyzxyz", False, 9, False);
+    assert(0,           0, "a^*bc", "abc", True, 3, False);
+    assert(0,           0, "a^*bc", "bc", True, 2, False);
+    assert(0,           0, "a^*bc", "aaaaabc", True, 7, False);
+    assert(0,           0, "a^*", "aaaaa", True, 5, False);
+    assert(0,           0, "123a^*", "123aaaaa", True, 8, False);
+    assert(0,           0, "123a^*456", "123a456", True, 7, False);
+    assert(0,           0, "123a^*456", "123456", True, 6, False);
+    assert(0,           0, "123{ab}^*456", "123ababab456", True, 12, False);
+    assert(0,           0, "{ab}^*{cd}^*", "x", True, 0, False);
+    assert(0,           0, "x{ab}^*{cd}^*", "x", True, 1, False);
+    assert(0,           0, "x{ab}^*{cd}^*", "xab", True, 3, False);
+    assert(0,           0, "x{ab}^*{cd}^*", "xcd", True, 3, False);
+    assert(0,           0, "{xyz}^*xyz", "xyzxyzxyz", True, 3, False);
+    assert(0,           0, "{{xyz}^*}xyz", "xyzxyzxyz", False, 9, False);
+    assert(0, "NamesList", "{A-Za-z^*} {,A-Za-z^*}^*", "Abc,Xyz,Kli", True, 11, False);
 
     // *
     assert(0, 0, "*", "xyz", True, 3, False);

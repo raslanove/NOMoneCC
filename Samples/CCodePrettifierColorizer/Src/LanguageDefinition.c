@@ -23,7 +23,7 @@ void definePreprocessing(struct NCC* ncc) {
     // =====================================
 
     // Header name,
-    //NCC_addRule(ncc, "h-char", "\x01-\x09 | \x0b-\xff", 0, False, False, False); // All characters except new-line.
+    //NCC_addRule(ncc, "h-char", "\x01-\\\x09 | \x0b-\xff", 0, False, False, False); // All characters except new-line.
     //NCC_addRule(ncc, "header-name", "{<${h-char}^*>} | {\"${h-char}^*\"}", 0, False, False, False);
 
     // Preprocessing number,
@@ -240,8 +240,8 @@ void defineLanguage(struct NCC* ncc) {
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "enumeration-constant", "${identifier}"));
 
     // Character constant (supporting unknown escape sequences which are implementation defined. We'll pass the escaped character like gcc and clang do),
-    NCC_addRule(plainRuleData.set(&plainRuleData, "c-char", "\x01-\x09 | \x0b-\x5b | \x5d-\xff")); // All characters except new-line and backslash (\).
-    NCC_addRule(plainRuleData.set(&plainRuleData, "c-char-with-backslash-without-uUxX", "\x01-\x09 | \x0b-\x54 | \x56-\x57| \x59-\x74 | \x76-\x77 | \x79-\xff")); // All characters except new-line, 'u', 'U', 'x' and 'X'.
+    NCC_addRule(plainRuleData.set(&plainRuleData, "c-char", "\x01-\\\x09 | \x0b-\x5b | \x5d-\xff")); // All characters except new-line and backslash (\). "\x09" is "\t", and is reserved, hence we needed to escape it.
+    NCC_addRule(plainRuleData.set(&plainRuleData, "c-char-with-backslash-without-uUxX", "\x01-\\\x09 | \x0b-\x54 | \x56-\x57| \x59-\x74 | \x76-\x77 | \x79-\xff")); // All characters except new-line, 'u', 'U', 'x' and 'X'.
     NCC_addRule(plainRuleData.set(&plainRuleData, "hexadecimal-escape-sequence", "\\\\x ${hexadecimal-digit} ${hexadecimal-digit}^*"));
     NCC_addRule(pushingRuleData.set(&pushingRuleData, "character-constant", "L|u|U|${ε} ' { ${c-char}|${hexadecimal-escape-sequence}|${universal-character-name}|{\\\\${c-char-with-backslash-without-uUxX}} }^* '"));
 
