@@ -104,10 +104,25 @@
 //                                "${logical-or-expression} | "
 //                                "{${logical-or-expression} ${} ${?} ${} ${expression} ${} ${:} ${} ${conditional-expression}}"));
 //
+// Or nodes:
+// ---------
+// Or nodes will turn the node that comes after the "|" into a separate sub-rule. Or nodes work by
+// creating a tree for the node just before the "|" (lhs) and another tree for the node following
+// it (rhs). This effectively puts the both nodes within braces, hence exposing them to the wildcard
+// limitations (see below).
+//
+// If both lhs and rhs match, the or node will select the one which results in the longest match,
+// not just the lhs and rhs node, but the entire tree. Example:
+//    rule: {ab}|{abc}cdef
+//    text: abcdef
+// This will match the entire text "abcdef". The or node will select the lhs, even though it's only
+// 2 characters long while the rhs is 3. This is because selecting the lhs will result in the entire
+// tree matching with length 6, while choosing the rhs will only match 3 characters.
+//
 // Wildcard nodes:
 // ---------------
-// Anything nodes (*) will match anything until the remaining part of the sub-rule is encountered.
-// For instance:
+// Repeat and Anything nodes are wildcard nodes. Anything nodes (*) will match anything until the
+// remaining part of the sub-rule is encountered. For instance:
 //   *xyz
 // Will consume all the text until an "xyz" is found. This works well as long as the termination
 // sequence is within the same sub-rule. If the termination sequence is part of a parent rule, it
@@ -124,20 +139,29 @@
 // will consume the entire text within the sub-rule, as it can't see the parent's termination
 // sequence.
 //
-// Or nodes:
-// ---------
-// Or nodes will turn the node that comes after the "|" into a separate sub-rule. Or nodes work by
-// creating a tree for the node just before the "|" (lhs) and another tree for the node following
-// it (rhs). This effectively puts the next node within braces ({rhs}), hence exposing it to the
-// wildcard limitations.
+// Finally, if the following tree matches with 0-length, a wildcard node won't ever be able to match
+// anything, since the following tree is matched immediately upon first try. A following tree with
+// 0-length match is not treated as a delimiter unless the repeat is no longer able to consume any
+// more text.
 //
-// If both lhs and rhs match, the or node will select the one which results in the longest match,
-// not just the lhs and rhs node, but the entire tree. Example:
-//    rule: {ab}|{abc}cdef
-//    text: abcdef
-// This will match the entire text "abcdef". The or node will select the lhs, even though it's only
-// 2 characters long while the rhs is 3. This is because selecting the lhs will result in the entire
-// tree matching with length 6, while chosing the rhs will only match 3 characters.
+// Repeat nodes:
+// -------------
+// Matches a rule 0 or more times. Won't accept matches with 0 length, though. A zero-length match
+// is problematic. Let's lay out how could deal with it in detail:
+//    1) We accept a 0 length match unconditionally.
+//    2) We match it only once.
+//    3) We reject it altogether.
+// Dealing with 0 length matches is a dilemma. Repeatedly accepting it can result in an infinite
+// loop. Accepting it once may put us in a weird position. What if:
+//   - the first time it matched with a non-zero length, then
+//   - matched a zero-length (we decided to accept it once), then
+//   - matched a zero-length again (shall we break from the repeat?), then
+//   - matched a non-zero length (remember the AST listeners can adjust the match length).
+// It's hard to come up with an intuitive behavior for such cases. As such, we chose option #3. We
+// will discard any ASTs produced by a zero-length match and we'll just skip the repeat node. You
+// can still use repeats on subrules that would occasionally produce zero-length matches. The node
+// shall work normally, exiting only when a zero-length match occurs or if the following tree is
+// matched.
 //
 // Selection nodes:
 // ----------------

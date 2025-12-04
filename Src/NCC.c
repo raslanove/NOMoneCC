@@ -850,12 +850,6 @@ static NCC_Node* createSubRuleNode(struct NCC* ncc, NCC_Node* parentNode, const 
         return 0;
     }
 
-    // TODO: remove. We won't be doing this...
-    // TODO: While matching, pass a new argument (**treeNextNode). Use this argument when repeat
-    //       nodes with no following sub-rules are encountered. If the following node is consumed,
-    //       reset this argument to indicated to the parent that following the next node is no
-    //       longer required...
-
     // Copy the sub-rule (because the rule text is const char*, can't substitute a zero wherever I need),
     char* subRule = NMALLOC(subRuleLength+1, "NCC.createSubRuleNode() subRule");
     NSystemUtils.memcpy(subRule, *in_out_rule, subRuleLength);
@@ -890,66 +884,105 @@ static NCC_Node* createSubRuleNode(struct NCC* ncc, NCC_Node* parentNode, const 
 typedef struct RepeatNodeData {
     NCC_Node* repeatedNode;
 } RepeatNodeData;
-// ...xxx TODO: Continue documentation from here downwards...
+
 static boolean repeatNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult) {
+
+    // This matches a rule "zero" or more times, and as such, there are no failed matches. A failed
+    // match is a successful match of 0 repeats. This returns false only if there's a following tree
+    // that couldn't be matched.
+
+    // This is a recursive match function. If it matches once, we'll try to match again.
+    // Question: Is the order important? If it's not, can't we do this iteratively? If the root node
+    //           contains too many repeats, won't this cause an overflow?
+    // Answer: The order is indeed important. And recursion won't really be an issue unless there
+    //         are too many matches of a single repeat rule. Luckily, subrules and substitute nodes
+    //         limit the depth of rule trees, so most of the recursion is rolled back. Even if we
+    //         decide to do it iteratively, we still have to keep error tracking data, and the
+    //         implementation will be harder to read and debug. With today's ram sizes, I say we
+    //         keep it recursive, and make recursion as lean as possible. Besides, this problem
+    //         isn't in the repeat node only. All the nodes in our system use recursion to push
+    //         their children to the stack before themselves.
+
+    // TODO: add recursionDepth member, and MAX_RECURSION_DEPTH to allow recursive calls to return
+    //       even if the repeat node is not done completely. A parent non-recursive function then
+    //       should use stack switching and aggregation to repeatedly call the recursive function
+    //       while keeping ast's proper ordering...
+
     RepeatNodeData* nodeData = node->data;
 
-    // If there's no following subrule, match as much as you can, and always return True,
+    // If there are no following nodes, match as much as you can, and always return True,
     if (!node->nextNode) {
         NVector.pushBack(&ncc->parentStack, &node);
         MatchTree(repeatedNode, nodeData->repeatedNode, text, astParentNode, astNodeStacks[1], 0, {&repeatedNode}, 1)
         NVector.popBack(&ncc->parentStack, &node);
-        if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
-            if (repeatedNodeMatched) DiscardMatchingResult(&repeatedNode)
+        if (!repeatedNodeMatched) {
+            // Unlike other nodes, this is not considered a failed match. It's an accepted match of
+            // 0 repeats,
+            NSystemUtils.memset(outResult, 0, sizeof(NCC_MatchingResult));
+            return True;
+        } else if (repeatedNode.result.matchLength==0) {
+            // We won't accept successful matches with 0 length. This might throw us in an infinite
+            // loop. So instead of trying to make it work, we'll just reject it here. We'll reduce
+            // matches of 0 length to just this node matching zero times (not matching anything at
+            // all). Read more in "NCC.h",
+            DiscardMatchingResult(&repeatedNode)
             NSystemUtils.memset(outResult, 0, sizeof(NCC_MatchingResult));
             return True;
         }
 
-        // Attempt matching again,
+        // Attempt matching again (which will work, with at least 0 repeats, since we have no
+        // following tree),
         repeatNodeMatch(node, ncc, &text[repeatedNode.result.matchLength], astParentNode, outResult);
         if (outResult->terminate) {
             outResult->matchLength += repeatedNode.result.matchLength;
             return True;
         }
 
-        // TODO: is the order important? If it's not, can't we do this iteratively? If the root node contains too many
-        //       repeats, won't that cause an overflow?
+        // Push our non-zero match on top of any other repeats (which are definitely successful)
+        // that could have been made,
         AcceptMatchResult(repeatedNode)
         return True;
     }
 
-    // TODO: add a "nextNodeConsumed" field to the NCC_MatchingResult instead of passing "treeFollowingNode". Also, in the
-    // subrule and substitute nodes, check this field. If consumed, and the current node has a next node, reset the field
-    // before returning the parent. If this node doesn't have a next, leave the field set.
+    // We have a following node. Check if its tree matches,
+    MatchTree(followingTree, node->nextNode, text, astParentNode, astNodeStacks[0], 0, {&followingTree}, 1)
+    *outResult = followingTree.result;
+    // If the following tree allows matching 0 characters, then this repeat node is never going to
+    // match anything. We'll only treat a zero-length following tree as a delimiter if the repeat
+    // node no longer matches. On the other hand, if we've met a delimiter of non-zero length, then
+    // we should stop repeating immediately,
+    if (followingTreeMatched && followingTree.result.matchLength!=0) return True;
 
-    // Check if the following sub-rule matches,
-    MatchTree(followingSubRule, node->nextNode, text, astParentNode, astNodeStacks[0], 0, {&followingSubRule}, 1)
-    *outResult = followingSubRule.result;
-    if (followingSubRuleMatched && followingSubRule.result.matchLength != 0) return True;
-
-    // Following sub-rule didn't match, attempt repeating (on the temporary stack),
+    // Following tree didn't match or matched with 0 length, attempt repeating (on stack[1]),
     NVector.pushBack(&ncc->parentStack, &node);
-    MatchTree(repeatedNode, nodeData->repeatedNode, text, astParentNode, astNodeStacks[1], 0, {&followingSubRule COMMA &repeatedNode}, 2)
+    MatchTree(repeatedNode, nodeData->repeatedNode, text, astParentNode, astNodeStacks[1], 0, {&followingTree COMMA &repeatedNode}, 2)
     NVector.popBack(&ncc->parentStack, &node);
+
+    // See if this repeat has reached an end,
     if (!repeatedNodeMatched || repeatedNode.result.matchLength==0) {
+        // Can't accept a repeat of 0 length,
         if (repeatedNodeMatched) DiscardMatchingResult(&repeatedNode)
-        if (followingSubRuleMatched) return True;
-        outResult->matchLength += repeatedNode.result.matchLength;
+
+        // No more repeats then. Conclude nicely,
+        if (followingTreeMatched) return True;
+
+        // Unable to repeat or match the following tree. That's a match failure,
+        outResult->matchLength += repeatedNode.result.matchLength; // Failed matches still set matchLength to the longest match they could achieve.
         return False;
     }
 
-    // Something matched, attempt repeating. Discard any matches that could have been added by the following sub-rule,
-    if (NVector.size(ncc->astNodeStacks[0]) != followingSubRule.astStackMark) {
-        /*
+    // Something matched. Discard the zero-length match of the following tree (if any),
+    DiscardMatchingResult(&followingTree)
+    /*
+    if (NVector.size(ncc->astNodeStacks[0]) != followingTree.astStackMark) {
         NLOGI("sdf", "Discarding!");
         NCC_ASTNode_Data *nodeData;
         nodeData = NVector.getLast(ncc->astNodeStacks[0]);
         NLOGE("sdf", "Discarded name: %s", NString.get(&nodeData->rule->ruleName));
-        */
-        DiscardMatchingResult(&followingSubRule)
     }
+    */
 
-    // Repeat,
+    // Attempt repeating,
     boolean matched = repeatNodeMatch(node, ncc, &text[repeatedNode.result.matchLength], astParentNode, outResult);
     if (outResult->terminate || !matched) {
         // Didn't end properly, discard,
@@ -964,45 +997,53 @@ static boolean repeatNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text
 }
 
 static void repeatNodeDeleteTree(NCC_Node* tree) {
+    // Delete the repeated node,
     RepeatNodeData* nodeData = tree->data;
     nodeDeleteTree[nodeData->repeatedNode->type](nodeData->repeatedNode);
+
+    // Delete the following tree,
     if (tree->nextNode) nodeDeleteTree[tree->nextNode->type](tree->nextNode);
+
+    // Free our data structures,
     NFREE(tree->data, "NCC.repeatNodeDeleteTree() tree->data");
     NFREE(tree      , "NCC.repeatNodeDeleteTree() tree"      );
 }
 
-static NCC_Node* createRepeatNode(struct NCC* ncc, NCC_Node* parentNode, const char** in_out_rule) {
+static NCC_Node* createRepeatNode(NCC_Node* parentNode, const char** in_out_rule) {
 
-    // If the parent node is a literals node with more than one literal, break the last literal apart so that it's
-    // the only literal repeated,
+    // If the parent node is a literals node with more than one literal, break the last literal
+    // apart so that it's the only literal repeated,
     parentNode = breakLastLiteralIfNeeded(parentNode);
 
     // Get grand-parent node,
     NCC_Node* grandParentNode = parentNode->previousNode;
     if (!grandParentNode) {
+        // The only way a node would have no grandparent is when it's at the very top of the tree,
+        // in which case it's only going to have a parent node (root node),
         NERROR("NCC", "createRepeatNode(): %s^%s can't come at the beginning of a rule/sub-rule", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
         return 0;
     }
 
     // Parse the ^ expression,
     char repeatCount = (++(*in_out_rule))[0];
-    if (repeatCount != '*') {
-        NERROR("NCC", "createRepeatNode(): expecting %s*%s after %s^%s, found %s%c%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), repeatCount, NTCOLOR(STREAM_DEFAULT));
-        return 0;
-    } else {
+    if (repeatCount == '*') {
         // Skip the *,
         (*in_out_rule)++;
+    } else {
+        // TODO: maybe support a fixed number of repeats (^3), or a range (^3..7)?
+        NERROR("NCC", "createRepeatNode(): expecting %s*%s after %s^%s, found %s%c%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), repeatCount, NTCOLOR(STREAM_DEFAULT));
+        return 0;
     }
 
     // Create node,
     RepeatNodeData* nodeData = NMALLOC(sizeof(RepeatNodeData), "NCC.createRepeatNode() nodeData");
     NCC_Node* node = genericCreateNode(NCC_NodeType.REPEAT, nodeData);
 
-    // Remove parent from the grand-parent and attach this node instead,
+    // Remove parent from the grand-parent and attach this node (repeat) instead,
     genericSetNextNode(grandParentNode, node);
 
     // Turn parent node into a tree and attach it as the repeated node,
-    nodeData->repeatedNode = createRootNode(); // TODO: do we really need a root node here? Isn't the previous node already established and doesn't need a grand parent any more?
+    nodeData->repeatedNode = createRootNode();
     genericSetNextNode(nodeData->repeatedNode, parentNode);
 
     #if NCC_VERBOSE
@@ -1015,14 +1056,9 @@ static NCC_Node* createRepeatNode(struct NCC* ncc, NCC_Node* parentNode, const c
 // Anything node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-typedef struct AnythingNodeData {
-    int32_t dummyToBeRemoved;
-} AnythingNodeData;
-
 static boolean anythingNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult) {
-    AnythingNodeData* nodeData = node->data;
 
-    // If no following subrule, then match the entire text,
+    // If no following tree, then match the entire text,
     int32_t totalMatchLength=0;
     if (!node->nextNode) {
         while (text[totalMatchLength]) totalMatchLength++;
@@ -1031,48 +1067,55 @@ static boolean anythingNodeMatch(NCC_Node* node, struct NCC* ncc, const char* te
         return True;
     }
 
-    // There's a following subrule. Stop as soon as it's matched,
+    // There's a following tree. Stop as soon as it's matched,
     do {
-        // Check if the following sub-rule matches,
-        MatchTree(followingSubRule, node->nextNode, &text[totalMatchLength], astParentNode, astNodeStacks[0], totalMatchLength, {&followingSubRule}, 1)
+        // Check if the following tree matches,
+        MatchTree(followingTree, node->nextNode, &text[totalMatchLength], astParentNode, astNodeStacks[0], totalMatchLength, {&followingTree}, 1)
 
-        // If following subrule matched,
-        if (followingSubRuleMatched && followingSubRule.result.matchLength > 0) {
-            *outResult = followingSubRule.result;
+        // Same as with repeat nodes, if the following tree allows matching 0 characters, then this
+        // anything node is never going to match anything. We'll only treat a zero-length following
+        // tree as a delimiter if there is no more text to match. On the other hand, if we've met
+        // a delimiter of non-zero length, then we should stop consuming text immediately.
+
+        // If following tree matched,
+        if (followingTreeMatched && followingTree.result.matchLength > 0) {
+            // We have found our delimiter. Match gracefully,
+            *outResult = followingTree.result;
             outResult->matchLength += totalMatchLength;
             return True;
         }
 
-        // If text ended,
+        // If text ended, whatever the following tree returned is our result, even if it's a match
+        // of 0 length,
         if (!text[totalMatchLength]) {
-            *outResult = followingSubRule.result;
+            *outResult = followingTree.result;
             outResult->matchLength += totalMatchLength;
-            return followingSubRuleMatched;
+            return followingTreeMatched;
         }
 
-        // Following sub-rule didn't match, or had a zero-length match,
-        if (followingSubRuleMatched) DiscardMatchingResult(&followingSubRule)
+        // At this point:
+        //    - the text has not ended,
+        //    - the following tree didn't match, or had a zero-length match (which we won't accept).
+        if (followingTreeMatched) DiscardMatchingResult(&followingTree)
 
-        // Text didn't end, advance,
+        // Advance!
         totalMatchLength++;
     } while (True);
 }
 
 static void anythingNodeDeleteTree(NCC_Node* tree) {
-    AnythingNodeData* nodeData = tree->data;
+    // This node has no data member to delete.
     if (tree->nextNode) nodeDeleteTree[tree->nextNode->type](tree->nextNode);
-    NFREE(tree->data, "NCC.anythingNodeDeleteTree() tree->data");
     NFREE(tree, "NCC.anythingNodeDeleteTree() tree");
 }
 
-static NCC_Node* createAnythingNode(struct NCC* ncc, NCC_Node* parentNode, const char** in_out_rule) {
+static NCC_Node* createAnythingNode(NCC_Node* parentNode, const char** in_out_rule) {
 
     // Skip the *,
     (*in_out_rule)++;
 
     // Create node,
-    AnythingNodeData* nodeData = NMALLOC(sizeof(AnythingNodeData), "NCC.createAnythingNode() nodeData");
-    NCC_Node* node = genericCreateNode(NCC_NodeType.ANYTHING, nodeData);
+    NCC_Node* node = genericCreateNode(NCC_NodeType.ANYTHING, 0);
 
     #if NCC_VERBOSE
     NLOGI("NCC", "Created anything node: %s*%s%s", NTCOLOR(HIGHLIGHT), *in_out_rule, NTCOLOR(STREAM_DEFAULT));
@@ -1084,6 +1127,8 @@ static NCC_Node* createAnythingNode(struct NCC* ncc, NCC_Node* parentNode, const
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Substitute node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// ...xxx TODO: continue documentation from here...
 
 typedef struct SubstituteNodeData {
     NCC_Rule* rule;
@@ -1530,15 +1575,15 @@ static NCC_Node* getNextNode(struct NCC* ncc, NCC_Node* parentNode, const char**
     // Handle different token types,
     switch (currentChar) {
         case   0: return 0;
-        case '#': return createTokenNode(ncc, parentNode, in_out_rule);
+        case '#': return createTokenNode     (ncc, parentNode, in_out_rule);
         case '$': return createSubstituteNode(ncc, parentNode, in_out_rule);
 
         // TODO: add '@' to create a non-pushing (silent) substitute node...
 
-        case '*': return createAnythingNode(ncc, parentNode, in_out_rule);
-        case '{': return createSubRuleNode(ncc, parentNode, in_out_rule);
-        case '^': return createRepeatNode(ncc, parentNode, in_out_rule);
-        case '|': return createOrNode(ncc, parentNode, in_out_rule);
+        case '*': return createAnythingNode  (     parentNode, in_out_rule);
+        case '{': return createSubRuleNode   (ncc, parentNode, in_out_rule);
+        case '^': return createRepeatNode    (     parentNode, in_out_rule);
+        case '|': return createOrNode        (ncc, parentNode, in_out_rule);
         case '-':
             NERROR("NCC", "getNextNode(): a '%s-%s' must always be preceded by a literal", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
             return 0;
