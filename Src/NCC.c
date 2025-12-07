@@ -63,7 +63,7 @@ static boolean matchRuleTree(
         int32_t lengthToAddIfTerminated, MatchedASTTree** astTreesToDiscardIfTerminated, int32_t astTreesToDiscardCount);
 static void discardMatchingResult(MatchedASTTree* tree);
 
-// A convenient macro to be used inside token matching methods. It creates 2 variables to capture
+// A convenient macro to be used inside node matching methods. It creates 2 variables to capture
 // the results of matching (treeName and treeNameMatched) and automatically handles termination,
 #define COMMA , // See: https://stackoverflow.com/questions/20913103/is-it-possible-to-pass-a-brace-enclosed-initializer-as-a-macro-parameter#comment31397917_20913103
 #define MatchTree(treeName, ruleTree, text, astParentNode, nccStack, lengthToAddIfTerminated, deleteList, deleteCount) \
@@ -90,7 +90,7 @@ static void discardMatchingResult(MatchedASTTree* tree);
 
 // A little trick to make an enum into an object,
 struct NCC_NodeType {
-    int32_t ROOT, LITERALS, LITERAL_RANGE, OR, SUB_RULE, REPEAT, ANYTHING, SUBSTITUTE, TOKEN;
+    int32_t ROOT, LITERALS, LITERAL_RANGE, OR, SUB_RULE, REPEAT, ANYTHING, SUBSTITUTE, SELECTION;
 };
 const struct NCC_NodeType NCC_NodeType = {
     .ROOT = 0,              // The topmost node of rules trees. Exists for convenience, so that all
@@ -112,8 +112,7 @@ const struct NCC_NodeType NCC_NodeType = {
                             // "Wildcard nodes" and "Or nodes" explanation in "NCC.h".
     .SUBSTITUTE = 7,        // Subrule with a name. Fires listeners to create and manipulate AST
                             // nodes as it matches. Example: ${Identifier}
-// TODO: rename to selection...
-    .TOKEN = 8              // Tries a bunch of different named rules (attempted rules list), gets
+    .SELECTION = 8          // Tries a bunch of different named rules (attempted rules list), gets
                             // the longest match, then either:
                             //   => accepts it. Or,
                             //   => accepts it only if it belongs to a subset of the initial
@@ -168,19 +167,19 @@ static void    anythingNodeDeleteTree    (NCC_Node* tree);
 static boolean substituteNodeMatch       (NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult);
 static void    substituteNodeDeleteTree  (NCC_Node* tree);
 
-static boolean tokenNodeMatch            (NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult);
-static void    tokenNodeDeleteTree       (NCC_Node* tree);
+static boolean selectionNodeMatch        (NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult);
+static void    selectionNodeDeleteTree   (NCC_Node* tree);
 
 // Actual tables,
 typedef boolean (*NCC_Node_match     )   (NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult);
 typedef void    (*NCC_Node_deleteTree)   (NCC_Node* tree);
 
-/*╔═══════════════════════════════╤════════════════════╤═════════════════════════╤═════════════════════════════╤═════════════════════════════════╤═══════════════════════╤════════════════════════════╤═══════════════════════════╤═════════════════════════════╤═══════════════════════════════╤═══════════════════════════╗*/
-/*║   Method                       ╲   Node            │   Root                  │   Literals                  │   Literals range                │   Or                  │   Sub-rule                 │   Repeat                  │   Anything                  │   Substitute                  │   Selection               ║*/
-/*╟─────────────────────────────────┴──────────────────┼─────────────────────────┼─────────────────────────────┼─────────────────────────────────┼───────────────────────┼────────────────────────────┼───────────────────────────┼─────────────────────────────┼───────────────────────────────┼───────────────────────────╢*/
-/*║*/ static NCC_Node_match      nodeMatch     [] = {/*│*/ rootNodeMatch     , /*│*/ literalsNodeMatch     , /*│*/ literalRangeNodeMatch     , /*│*/ orNodeMatch     , /*│*/ subRuleNodeMatch     , /*│*/ repeatNodeMatch     , /*│*/ anythingNodeMatch     , /*│*/ substituteNodeMatch     , /*│*/ tokenNodeMatch     }; /*║*/
-/*║*/ static NCC_Node_deleteTree nodeDeleteTree[] = {/*│*/ rootNodeDeleteTree, /*│*/ literalsNodeDeleteTree, /*│*/ literalRangeNodeDeleteTree, /*│*/ orNodeDeleteTree, /*│*/ subRuleNodeDeleteTree, /*│*/ repeatNodeDeleteTree, /*│*/ anythingNodeDeleteTree, /*│*/ substituteNodeDeleteTree, /*│*/ tokenNodeDeleteTree}; /*║*/
-/*╚════════════════════════════════════════════════════╧═════════════════════════╧═════════════════════════════╧═════════════════════════════════╧═══════════════════════╧════════════════════════════╧═══════════════════════════╧═════════════════════════════╧═══════════════════════════════╧═══════════════════════════╝*/
+/*╔═══════════════════════════════╤════════════════════╤═════════════════════════╤═════════════════════════════╤═════════════════════════════════╤═══════════════════════╤════════════════════════════╤═══════════════════════════╤═════════════════════════════╤═══════════════════════════════╤═══════════════════════════════╗*/
+/*║   Method                       ╲   Node            │   Root                  │   Literals                  │   Literals range                │   Or                  │   Sub-rule                 │   Repeat                  │   Anything                  │   Substitute                  │   Selection                   ║*/
+/*╟─────────────────────────────────┴──────────────────┼─────────────────────────┼─────────────────────────────┼─────────────────────────────────┼───────────────────────┼────────────────────────────┼───────────────────────────┼─────────────────────────────┼───────────────────────────────┼───────────────────────────────╢*/
+/*║*/ static NCC_Node_match      nodeMatch     [] = {/*│*/ rootNodeMatch     , /*│*/ literalsNodeMatch     , /*│*/ literalRangeNodeMatch     , /*│*/ orNodeMatch     , /*│*/ subRuleNodeMatch     , /*│*/ repeatNodeMatch     , /*│*/ anythingNodeMatch     , /*│*/ substituteNodeMatch     , /*│*/ selectionNodeMatch     }; /*║*/
+/*║*/ static NCC_Node_deleteTree nodeDeleteTree[] = {/*│*/ rootNodeDeleteTree, /*│*/ literalsNodeDeleteTree, /*│*/ literalRangeNodeDeleteTree, /*│*/ orNodeDeleteTree, /*│*/ subRuleNodeDeleteTree, /*│*/ repeatNodeDeleteTree, /*│*/ anythingNodeDeleteTree, /*│*/ substituteNodeDeleteTree, /*│*/ selectionNodeDeleteTree}; /*║*/
+/*╚════════════════════════════════════════════════════╧═════════════════════════╧═════════════════════════════╧═════════════════════════════════╧═══════════════════════╧════════════════════════════╧═══════════════════════════╧═════════════════════════════╧═══════════════════════════════╧═══════════════════════════════╝*/
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rule
@@ -1342,81 +1341,88 @@ static NCC_Node* createSubstituteNode(struct NCC* ncc, NCC_Node* parentNode, con
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Token node
+// Selection node
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// ...xxx TODO: Continue documentation from here downward...
-
-typedef struct TokenNodeData {
+typedef struct SelectionNodeData {
     struct NVector    attemptedRules;  // NCC_Rule*
     struct NVector verificationRules;  // NCC_Rule*
     NCC_Node* substituteNode;   // Used in matching.
-    boolean matchIfIncluded; // Accept rule if the matched rule is included in the verification rules.
-} TokenNodeData;
+    boolean matchIfIncluded;    // Indicates the verification mode. If true, accept if the matched rule is included in the verification rules, reject otherwise.
+} SelectionNodeData;
 
-// TODO: rename...
-static boolean tokenNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult) {
-    TokenNodeData *nodeData = node->data;
+static boolean selectionNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult) {
+    SelectionNodeData *nodeData = node->data;
 
-    int32_t currentNodeStackIndex=1;
+    // Tries all rules in the attemptedRules list, picks the one with longest match length among the
+    // the successful matches. If there's a verificationRules list, it goes on to accept (==) or
+    // reject (!=) based on whether the picked rule belongs to the verification list.
+
+    // Look for the longest successful match in the attempted rules list,
     MatchedASTTree longestMatchRule;
     const char* longestMatchRuleName=0;
-    boolean foundMatch=False;
-    outResult->matchLength = -1;
-
+    boolean matchFound=False;
+    #define VERY_NEGATIVE_MATCH_LENGTH (-10000000)   // Outrageously negative, to make sure any match is longer.
+    outResult->matchLength = VERY_NEGATIVE_MATCH_LENGTH;
+    int32_t currentNodeStackIndex=1;    // We'll match on temporary stacks 1 and 2, switching as needed.
     int32_t attemptedRulesCount = NVector.size(&nodeData->attemptedRules);
     for (int32_t i=0; i<attemptedRulesCount; i++) {
-        NCC_Rule* rule = *(NCC_Rule**) NVector.get(&nodeData->attemptedRules, i);
+        NCC_Rule* attemptedRule = *(NCC_Rule**) NVector.get(&nodeData->attemptedRules, i);
 
         // Matching through a substitute node, this way the top-most rule can be pushed,
-        ((SubstituteNodeData*) nodeData->substituteNode->data)->rule = rule;
+        // We'll wrap the rule into a substitute node. This is very convenient, for we can just use
+        // the substitute node match, and it'll take care of AST handling for us,
+        // TODO: handle silence...
+        ((SubstituteNodeData*) nodeData->substituteNode->data)->rule = attemptedRule;
         NVector.pushBack(&ncc->parentStack, &node);
-        MatchTree(token, nodeData->substituteNode, text, astParentNode, astNodeStacks[currentNodeStackIndex], 0, {&token}, 1)
+        MatchTree(rule, nodeData->substituteNode, text, astParentNode, astNodeStacks[currentNodeStackIndex], 0, {&rule}, 1)
         NVector.popBack(&ncc->parentStack, &node);
 
-        if (!foundMatch && token.result.matchLength > outResult->matchLength) *outResult = token.result;
-        if (!tokenMatched) continue;
+        // Even if we don't find a match, we still want to keep the maximum match length for error
+        // reporting. If we haven't found a match yet, then a simple comparison will do,
+        if (!matchFound && rule.result.matchLength > outResult->matchLength) *outResult = rule.result;
 
-        // Check if multiple AST nodes where pushed,
-        int32_t pushedNodesCount = NVector.size(*token.astNodesStack) - token.astStackMark;
-        if (pushedNodesCount > 1) {
-            NERROR("NCC", "tokenNodeMatch(): matched token rule %s%s%s pushed multiple AST nodes.", NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
-            for (int32_t i=0; i<pushedNodesCount; i++) {
-                NCC_ASTNode_Data* matchedASTNode = NVector.get(*token.astNodesStack, token.astStackMark + i);
-                NLOGE("NCC", "                  %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&matchedASTNode->rule->ruleName), NTCOLOR(STREAM_DEFAULT));
-            }
-            *outResult = token.result;
-            DiscardMatchingResult(&token)
-            if (foundMatch) DiscardMatchingResult(&longestMatchRule)
-            return False;
-        }
+        // If not a match, no further handling needed,
+        if (!ruleMatched) continue;
 
         // Valid match, compare to the longest (if any),
-        if (foundMatch) {
-            if (token.result.matchLength > longestMatchRule.result.matchLength) {
+        if (matchFound) {
+            if (rule.result.matchLength > longestMatchRule.result.matchLength) {
+                // The new rule is longer, discard the previous match,
                 DiscardMatchingResult(&longestMatchRule)
-                longestMatchRule = token;
-                longestMatchRuleName = NString.get(&rule->data.ruleName);
-                currentNodeStackIndex = 3 - currentNodeStackIndex;  // Switch to the other stack.
+
+                // Set the new one as the longest,
+                longestMatchRule = rule;
+                longestMatchRuleName = NString.get(&attemptedRule->data.ruleName);
+
+                // Switch to the other temporary stack, to be able to discard this rule's stack if
+                // a better match is found,
+                currentNodeStackIndex = 3 - currentNodeStackIndex;  // To switch between 1 and 2.
             } else {
-                DiscardMatchingResult(&token)
+                // Not a longer match, discard and go on,
+                DiscardMatchingResult(&rule)
             }
         } else {
-            foundMatch = True;
-            longestMatchRule = token;
-            longestMatchRuleName = NString.get(&rule->data.ruleName);
-            currentNodeStackIndex = 3 - currentNodeStackIndex;  // Switch to the other stack.
+            // This is the first match. It's the longest so far,
+            matchFound = True;
+            longestMatchRule = rule;
+            longestMatchRuleName = NString.get(&attemptedRule->data.ruleName);
+
+            // Switch to the other temporary stack, to be able to discard this rule's stack if
+            // a better match is found,
+            currentNodeStackIndex = 3 - currentNodeStackIndex;  // To switch between 1 and 2.
         }
     }
 
-    // Return immediately if no match found,
-    if (!foundMatch) {
-        if (outResult->matchLength==-1) NSystemUtils.memset(outResult, 0, sizeof(NCC_MatchingResult));
+    // If no match found, no need to continue,
+    if (!matchFound) {
+        // Clear the result of no rule did that already (unlikely?),
+        if (outResult->matchLength==VERY_NEGATIVE_MATCH_LENGTH) NSystemUtils.memset(outResult, 0, sizeof(NCC_MatchingResult));
         return False;
     }
 
-    // Verify,
-    boolean matchFound = False;
+    // Now, let's find the match in the verification rules (if any),
+    matchFound = False;
     int32_t verificationRulesCount = NVector.size(&nodeData->verificationRules);
     for (int32_t i=0; i<verificationRulesCount; i++) {
         NCC_Rule* rule = *(NCC_Rule**) NVector.get(&nodeData->verificationRules, i);
@@ -1426,14 +1432,14 @@ static boolean tokenNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text,
         }
     }
 
-    // Either match found when it shouldn't or no match found when it should,
+    // If either match found when it shouldn't or no match found when it should, reject,
     if (matchFound ^ nodeData->matchIfIncluded) {
         *outResult = longestMatchRule.result;
         DiscardMatchingResult(&longestMatchRule)
         return False;
     }
 
-    // Verified, match next node,
+    // Verified, match next node as usual,
     if (node->nextNode) {
         MatchTree(followingTree, node->nextNode, &text[longestMatchRule.result.matchLength], astParentNode, astNodeStacks[0], longestMatchRule.result.matchLength, {&followingTree COMMA &longestMatchRule}, 2)
         *outResult = followingTree.result;
@@ -1451,44 +1457,50 @@ static boolean tokenNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text,
     return True;
 }
 
-static void tokenNodeDeleteTree(NCC_Node* tree) {
+static void selectionNodeDeleteTree(NCC_Node* tree) {
 
     // Note: we don't free the rules, we didn't allocate them.
-    TokenNodeData* nodeData = tree->data;
+    SelectionNodeData* nodeData = tree->data;
     NVector.destroy(&nodeData->   attemptedRules);
     NVector.destroy(&nodeData->verificationRules);
+
+    // We've create the substitute node during the initialization of this node. It needs to be freed
+    // as well,
     substituteNodeDeleteTree(nodeData->substituteNode);
 
+    // Delete next nodes,
     if (tree->nextNode) nodeDeleteTree[tree->nextNode->type](tree->nextNode);
-    NFREE(tree->data, "NCC.tokenNodeDeleteTree() tree->data");
-    NFREE(tree      , "NCC.tokenNodeDeleteTree() tree"      );
+
+    // Free our data structures and self,
+    NFREE(tree->data, "NCC.selectionNodeDeleteTree() tree->data");
+    NFREE(tree      , "NCC.selectionNodeDeleteTree() tree"      );
 }
 
-static NCC_Node* createTokenNode(struct NCC* ncc, NCC_Node* parentNode, const char** in_out_rule) {
+static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, const char** in_out_rule) {
 
     // Skip the '#'.
     const char* ruleBeginning = (*in_out_rule)++;
 
-    // TODO: allow having $ or @ before individual subrules, to indicate pushing/non-pushing...
-
     // Skip the '{',
     if (*((*in_out_rule)++) != '{') {
-        NERROR("NCC", "createTokenNode(): unescaped %s#%ss must be followed by %s{%ss", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "createSelectionNode(): unescaped %s#%ss must be followed by %s{%ss", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
         return 0;
     }
 
-    // Prepare node data,
-    TokenNodeData* nodeData = NMALLOC(sizeof(TokenNodeData), "NCC.createTokenNode() nodeData");
+    // Prepare data structures,
+    SelectionNodeData* nodeData = NMALLOC(sizeof(SelectionNodeData), "NCC.createSelectionNode() nodeData");
     NVector.initialize(&nodeData->   attemptedRules, 0, sizeof(NCC_Rule*));
     NVector.initialize(&nodeData->verificationRules, 0, sizeof(NCC_Rule*));
     nodeData->matchIfIncluded = False;
 
-    // Parse the token text,
+    // Parse the node text,
     struct NString ruleName;
     NString.initialize(&ruleName, "");
-    boolean matchingModeSet=False;
+    boolean verificationModeSet=False;
     do {
         char currentChar = *((*in_out_rule)++);
+
+        // TODO: allow having $ or @ or nothing before individual subrules, to indicate pushing/non-pushing...
         if (currentChar=='{') {
 
             // Parse rule name,
@@ -1497,66 +1509,101 @@ static NCC_Node* createTokenNode(struct NCC* ncc, NCC_Node* parentNode, const ch
                 currentChar = *((*in_out_rule)++);
                 if (currentChar=='}') break;
                 if (!currentChar) {
-                    NERROR("NCC", "createTokenNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                    NERROR("NCC", "createSelectionNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
                     goto finish;
                 }
                 NString.append(&ruleName, "%c", currentChar);
             } while(True);
 
-            // Add to the rules,
-            NCC_Rule* rule = getRule(ncc, NString.get(&ruleName));
-            if (!rule) {
-                NERROR("NCC", "createTokenNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT));
-                goto finish;
+            // Some badly-formed-rule checks,
+            NCC_Rule* rule=0;
+            if (!verificationModeSet) {
+                // Check if the rule exists,
+                rule = getRule(ncc, NString.get(&ruleName));
+                if (!rule) {
+                    NERROR("NCC", "createSelectionNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT));
+                    goto finish;
+                }
+            } else {
+                // Verification rules must be a subset of the attempted rules list. Look for this
+                // rule in the attempted rules list,
+                int32_t attemptedRulesCount = NVector.size(&nodeData->attemptedRules);
+                for (int32_t i=0; i<attemptedRulesCount; i++) {
+                    NCC_Rule* attemptedRule = *(NCC_Rule**) NVector.get(&nodeData->attemptedRules, i);
+                    if (NCString.equals(NString.get(&ruleName), NString.get(&attemptedRule->data.ruleName))) {
+                        // Rule found,
+                        rule = attemptedRule;
+                        break;
+                    }
+                }
+
+                // If not found,
+                if (!rule) {
+                    NERROR("NCC", "createSelectionNode(): couldn't find a rule named: %s%s%s in the attempted rules list", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT));
+                    goto finish;
+                }
             }
-            NVector.pushBack(matchingModeSet ? &nodeData->verificationRules : &nodeData->attemptedRules, &rule);
+
+            // Add to the appropriate list,
+            NVector.pushBack(verificationModeSet ? &nodeData->verificationRules : &nodeData->attemptedRules, &rule);
 
         } else if (currentChar=='}') {
-            if (!NVector.size(&nodeData->attemptedRules)) {
-                NERROR("NCC", "createTokenNode(): Can't have a token node without any attempted rules: %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
-                goto finish;
-            }
-            if (nodeData->matchIfIncluded && !NVector.size(&nodeData->verificationRules)) {
-                NERROR("NCC", "createTokenNode(): Token node would never match anything: %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
-                goto finish;
 
+            // If no rules were specified,
+            if (!NVector.size(&nodeData->attemptedRules)) {
+                NERROR("NCC", "createSelectionNode(): Can't have a selection node without any attempted rules: %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                goto finish;
             }
-            // Everything looks great, move on,
+
+            // If an == operator was specified but no verification rules followed,
+            if (nodeData->matchIfIncluded && !NVector.size(&nodeData->verificationRules)) {
+                NERROR("NCC", "createSelectionNode(): Selection node would never match anything: %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                goto finish;
+            }
+
+            // Everything looks great, move on and finalize creating this node,
             break;
         } else if ((currentChar == ' ') || (currentChar == '\t')) {
             // Just skip.
         } else if ((currentChar == '=') || (currentChar == '!')) {
-            if (matchingModeSet) {
-                NERROR("NCC", "createTokenNode(): Can't set matching mode more than once in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+
+            // If we've already seen an operator before,
+            if (verificationModeSet) {
+                NERROR("NCC", "createSelectionNode(): Can't set matching mode more than once in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
                 goto finish;
             }
+
+            // Set the verification mode,
+            nodeData->matchIfIncluded = (currentChar == '=');
+            verificationModeSet = True;
+
+            // Whether the operator is "==" or "!=", the second character is always an "=". We just
+            // keep it to look like a logic operator for C junkies like me (C language, not Cocaine),
             char nextChar = *((*in_out_rule)++);
-            if (nextChar == '=') {
-                matchingModeSet = True;
-                nodeData->matchIfIncluded = (currentChar == '=');
-            } else {
-                NERROR("NCC", "createTokenNode(): expected %s%c=%s, found %s%c%c%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, nextChar, NTCOLOR(STREAM_DEFAULT));
+            if (nextChar != '=') {
+                NERROR("NCC", "createSelectionNode(): expected %s%c=%s, found %s%c%c%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, nextChar, NTCOLOR(STREAM_DEFAULT));
                 goto finish;
             }
         } else if (!currentChar) {
-            NERROR("NCC", "createTokenNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+            NERROR("NCC", "createSelectionNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
             goto finish;
         } else {
-            NERROR("NCC", "createTokenNode(): expected %s==%s or %s!=%s or %s{%s, found %s%c%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT));
+            // TODO: add $ and @...
+            NERROR("NCC", "createSelectionNode(): expected %s==%s or %s!=%s or %s{%s, found %s%c%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT));
             goto finish;
         }
     } while (True);
 
-    // The token text should be completely parsed by now, create the node,
-    NCC_Node* node = genericCreateNode(NCC_NodeType.TOKEN, nodeData);
+    // The node text should be completely parsed by now, create the node,
+    NCC_Node* node = genericCreateNode(NCC_NodeType.SELECTION, nodeData);
 
     // Create a substitute node to be used in matching,
-    SubstituteNodeData* substituteNodeData = NMALLOC(sizeof(SubstituteNodeData), "NCC.createTokenNode() substituteNodeData");
+    SubstituteNodeData* substituteNodeData = NMALLOC(sizeof(SubstituteNodeData), "NCC.createSelectionNode() substituteNodeData");
     nodeData->substituteNode = genericCreateNode(NCC_NodeType.SUBSTITUTE, substituteNodeData);
     substituteNodeData->rule = 0;
 
     #if NCC_VERBOSE
-    NLOGI("NCC", "Created token node");
+    NLOGI("NCC", "Created selection node");
     #endif
 
     genericSetNextNode(parentNode, node);
@@ -1568,13 +1615,15 @@ static NCC_Node* createTokenNode(struct NCC* ncc, NCC_Node* parentNode, const ch
     NString.destroy(&ruleName);
     NVector.destroy(&nodeData->   attemptedRules);
     NVector.destroy(&nodeData->verificationRules);
-    NFREE(nodeData, "NCC.createTokenNode() nodeData");
+    NFREE(nodeData, "NCC.createSelectionNode() nodeData");
     return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Helper functions
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// ...xxx TODO: Continue documentation from here downward...
 
 // Constructs a rule tree from rule text,
 static NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule) {
@@ -1606,7 +1655,7 @@ static NCC_Node* getNextNode(struct NCC* ncc, NCC_Node* parentNode, const char**
     // Handle different token types,
     switch (currentChar) {
         case   0: return 0;
-        case '#': return createTokenNode     (ncc, parentNode, in_out_rule);
+        case '#': return createSelectionNode (ncc, parentNode, in_out_rule);
         case '$': return createSubstituteNode(ncc, parentNode, in_out_rule);
 
         // TODO: add '@' to create a non-pushing (silent) substitute node...
@@ -1846,7 +1895,7 @@ boolean NCC_match(struct NCC* ncc, const char* text, NCC_MatchingResult* outResu
 
         // Get the node and return it,
         if (outNode) {
-            // TODO: .... there could be more than one node on the stack...
+            // TODO: .... there could be more than one node on the stack?...
             if (!NVector.popBack(ncc->astNodeStacks[0], outNode)) NSystemUtils.memset(outNode, 0, sizeof(NCC_ASTNode_Data));
         } else {
 
