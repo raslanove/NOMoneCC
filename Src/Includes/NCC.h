@@ -247,10 +247,11 @@ struct NCC {
     struct NVector* astNodeStacks[NCC_AST_NODE_STACKS_COUNT]; // NCC_ASTNode_Data. To be able to discard nodes that are not needed.
 
     // Error reporting,
-    struct NVector parentStack; // NCC_Node*.
-    struct NVector maxMatchRuleStack; // const char*
-    int32_t maxMatchLength;
-    const char* textBeginning;
+    struct NVector parentStack;       // A vector of NCC_Node*. Used to keep track of the node-matching call-stack.
+    struct NVector maxMatchRuleStack; // A vector const char*. It contains the names of all the substitute nodes that
+                                      // were in the parentStack at the moment the longest match was set.
+    int32_t maxMatchLength;           // The length of the longest match during the last match operation.
+    const char* textBeginning;        // A pointer to the text currently being matched.
 };
 
 typedef struct NCC_ASTNode_Data {
@@ -272,7 +273,7 @@ typedef struct NCC_MatchingData {
 
 typedef void*   (*NCC_createASTNodeListener)(NCC_RuleData* ruleData, NCC_ASTNode_Data* parentNode);
 typedef void    (*NCC_deleteASTNodeListener)(NCC_ASTNode_Data* node, NCC_ASTNode_Data* parentNode);
-typedef boolean (*NCC_ruleMatchListener)(NCC_MatchingData* matchingData);  // Returns true if node accepted. Also, may set the match length and the terminate fields.
+typedef boolean (*NCC_ruleMatchListener)(NCC_MatchingData* matchingData);  // Returns true if node accepted. Also, may modify the match length and the terminate fields, influencing the rest of the match operation.
 
 typedef struct NCC_RuleData {
     struct NCC* ncc;
