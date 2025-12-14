@@ -14,26 +14,26 @@
 #define PRINT_TREES 0
 #define PRINT_COLORED_TREES 1
 
-struct PrettifierData {
+typedef struct PrettifierData {
     struct NString outString;
     struct NVector colorStack; // const char*
     const char* lastUsedColor;
     int32_t indentationCount;
-};
+} PrettifierData;
 
-static void initializePrettifierData(struct PrettifierData* prettifierData) {
+static void initializePrettifierData(PrettifierData* prettifierData) {
     NString.initialize(&prettifierData->outString, "");
     NVector.initialize(&prettifierData->colorStack, 0, sizeof(const char*));
     prettifierData->lastUsedColor = 0;
     prettifierData->indentationCount = 0;
 }
 
-static void destroyPrettifierData(struct PrettifierData* prettifierData) {
+static void destroyPrettifierData(PrettifierData* prettifierData) {
     NString.destroy(&prettifierData->outString);
     NVector.destroy(&prettifierData->colorStack);
 }
 
-static void prettifierAppend(struct PrettifierData* prettifierData, const char* text) {
+static void prettifierAppend(PrettifierData* prettifierData, const char* text) {
 
     // Append indentation,
     if (NCString.endsWith(NString.get(&prettifierData->outString), "\n")) {
@@ -61,7 +61,7 @@ static void prettifierAppend(struct PrettifierData* prettifierData, const char* 
     NString.append(&prettifierData->outString, "%s", text);
 }
 
-static void printLeavesImplementation(struct NCC_ASTNode* tree, struct PrettifierData* prettifierData) {
+static void printLeavesImplementation(NCC_ASTNode* tree, PrettifierData* prettifierData) {
     // Moved the implementation to a separate function to remove the prettifierData from the interface.
 
     const char* ruleNameCString = NString.get(&tree->name);
@@ -106,7 +106,7 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
         int32_t childrenCount = NVector.size(&tree->childNodes);
         if (childrenCount) {
             // Not a leaf, print children,
-            for (int32_t i=0; i<childrenCount; i++) printLeavesImplementation(*((struct NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData);
+            for (int32_t i=0; i<childrenCount; i++) printLeavesImplementation(*((NCC_ASTNode**) NVector.get(&tree->childNodes, i)), prettifierData);
         } else {
             // Leaf node,
             prettifierAppend(prettifierData, NString.get(&tree->value));
@@ -114,9 +114,9 @@ static void printLeavesImplementation(struct NCC_ASTNode* tree, struct Prettifie
     }
 }
 
-static void printLeaves(struct NCC_ASTNode* tree, struct NString* outString) {
+static void printLeaves(NCC_ASTNode* tree, struct NString* outString) {
 
-    struct PrettifierData prettifierData;
+    PrettifierData prettifierData;
     initializePrettifierData(&prettifierData);
     printLeavesImplementation(tree, &prettifierData);
     NString.set(outString, "%s", NString.get(&prettifierData.outString));
@@ -126,9 +126,10 @@ static void printLeaves(struct NCC_ASTNode* tree, struct NString* outString) {
 static void test(struct NCC* ncc, const char* code) {
 
     NLOGI("", "%sTesting: %s%s", NTCOLOR(GREEN_BRIGHT), NTCOLOR(BLUE_BRIGHT), code);
-    struct NCC_MatchingResult matchingResult;
-    struct NCC_ASTNode_Data tree;
-    boolean matched = NCC_match(ncc, code, &matchingResult, &tree);
+    NCC_MatchingResult matchingResult;
+    NCC_ASTNode_Data tree;
+    NCC_Rule *rootRule = getRootRule(ncc);
+    boolean matched = NCC_match(ncc, rootRule, code, &matchingResult, &tree);
     if (matched && tree.node) {
         struct NString treeString;
 

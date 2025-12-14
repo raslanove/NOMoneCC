@@ -242,8 +242,8 @@ typedef struct NCC_Rule NCC_Rule;
 // with all NCC relevant method, like we did for NVector and NString.
 struct NCC {
     void* extraData;
-    struct NVector rules; // A vector of pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
-    struct NCC_Rule* matchRule;
+    struct NVector rules;             // A vector of pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
+    struct NCC_Rule* matchRule;       // Necessary to allow rules being matched to appear in AST trees.
     struct NVector* astNodeStacks[NCC_AST_NODE_STACKS_COUNT]; // NCC_ASTNode_Data. To be able to discard nodes that are not needed.
 
     // Error reporting,
@@ -276,7 +276,6 @@ typedef void    (*NCC_deleteASTNodeListener)(NCC_ASTNode_Data* node, NCC_ASTNode
 typedef boolean (*NCC_ruleMatchListener)(NCC_MatchingData* matchingData);  // Returns true if node accepted. Also, may modify the match length and the terminate fields, influencing the rest of the match operation.
 
 typedef struct NCC_RuleData {
-    struct NCC* ncc;
     struct NString ruleName;
     struct NString ruleText;
     NCC_createASTNodeListener createASTNodeListener;
@@ -291,13 +290,15 @@ struct NCC* NCC_createNCC();
 void NCC_destroyNCC(struct NCC* ncc);
 void NCC_destroyAndFreeNCC(struct NCC* ncc);
 
-NCC_RuleData* NCC_initializeRuleData(NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createASTNodeListener createNodeListener, NCC_deleteASTNodeListener deleteNodeListener, NCC_ruleMatchListener matchListener);
+NCC_RuleData* NCC_initializeRuleData(NCC_RuleData* ruleData, const char* ruleName, const char* ruleText, NCC_createASTNodeListener createNodeListener, NCC_deleteASTNodeListener deleteNodeListener, NCC_ruleMatchListener matchListener);
 void NCC_destroyRuleData(NCC_RuleData* ruleData);
 
-boolean NCC_addRule(NCC_RuleData* ruleData);
-boolean NCC_updateRule(NCC_RuleData* ruleData);
-boolean NCC_setRootRule(struct NCC* ncc, const char* ruleName);
-boolean NCC_match(struct NCC* ncc, const char* text, NCC_MatchingResult* outResult, NCC_ASTNode_Data* outNode); // Returns True if matched. Sets outResult and outNode.
+boolean NCC_addRule(struct NCC* ncc, NCC_RuleData* ruleData);
+NCC_Rule* NCC_getRule(struct NCC* ncc, const char* ruleName);
+NCC_RuleData* NCC_getRuleData(struct NCC* ncc, const char* ruleName);
+boolean NCC_updateRule(struct NCC* ncc, NCC_RuleData* ruleData);
+boolean NCC_updateRuleText(struct NCC* ncc, NCC_Rule* rule, const char* newRuleText);
+boolean NCC_match(struct NCC* ncc, NCC_Rule* rule, const char* text, NCC_MatchingResult* outResult, NCC_ASTNode_Data* outNode); // Returns True if matched. Sets outResult and outNode.
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Generic AST construction methods

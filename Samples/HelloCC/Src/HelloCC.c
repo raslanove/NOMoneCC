@@ -9,7 +9,7 @@
 // Testing helper functions
 //////////////////////////////////////
 
-void assert(struct NCC* ncc, const char*ruleName, const char* rule, const char* text, boolean shouldMatch, int32_t expectedMatchLength, boolean logTree) {
+void assert(struct NCC* ncc, const char*ruleName, const char* ruleText, const char* textToMatch, boolean shouldMatch, int32_t expectedMatchLength, boolean logTree) {
 
     boolean nccNeedsDeletion = False;
     if (!ncc) {
@@ -18,26 +18,26 @@ void assert(struct NCC* ncc, const char*ruleName, const char* rule, const char* 
     }
     if (!ruleName) ruleName = "AssertTemp";
 
-    struct NCC_RuleData ruleData;
-    NCC_initializeRuleData(&ruleData, ncc, ruleName, rule, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode);
-    boolean success = NCC_addRule(&ruleData);
+    NCC_RuleData ruleData;
+    NCC_initializeRuleData(&ruleData, ruleName, ruleText, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode);
+    boolean success = NCC_addRule(ncc, &ruleData);
     NCC_destroyRuleData(&ruleData);
     if (!success) {
-        NERROR("HelloCC", "Couldn't add rule. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT));
+        NERROR("HelloCC", "Couldn't add ruleText. Rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         if (nccNeedsDeletion) NCC_destroyAndFreeNCC(ncc);
         return ;
     }
 
-    NCC_setRootRule(ncc, ruleName);
-    struct NCC_MatchingResult matchingResult;
-    struct NCC_ASTNode_Data treeData;
-    boolean matched = NCC_match(ncc, text, &matchingResult, logTree ? &treeData : 0);
+    NCC_MatchingResult matchingResult;
+    NCC_ASTNode_Data treeData;
+    NCC_Rule *rule = NCC_getRule(ncc, ruleName);
+    boolean matched = NCC_match(ncc, rule, textToMatch, &matchingResult, logTree ? &treeData : 0);
     if (shouldMatch && !matched) {
-        NERROR("HelloCC", "assert(): Match failed. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT));
+        NERROR("HelloCC", "assert(): Match failed. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), textToMatch, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT));
     } else if (!shouldMatch && matched) {
-        NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT));
+        NERROR("HelloCC", "assert(): Erroneously matched. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), textToMatch, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT));
     } else if (expectedMatchLength != matchingResult.matchLength) {
-        NERROR("HelloCC", "assert(): Wrong match length. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s, Expected match length: %s%d%s", NTCOLOR(HIGHLIGHT), rule, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), text, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), expectedMatchLength, NTCOLOR(STREAM_DEFAULT));
+        NERROR("HelloCC", "assert(): Wrong match length. Rule: %s%s%s, Text: %s%s%s, Match length: %s%d%s, Expected match length: %s%d%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), textToMatch, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), matchingResult.matchLength, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), expectedMatchLength, NTCOLOR(STREAM_DEFAULT));
     } else if (matched && logTree && treeData.node) {
 
         // Get the tree in string format,
@@ -54,7 +54,7 @@ void assert(struct NCC* ncc, const char*ruleName, const char* rule, const char* 
     if (nccNeedsDeletion) NCC_destroyAndFreeNCC(ncc);
 }
 
-boolean printListener(struct NCC_MatchingData* matchingData) {
+boolean printListener(NCC_MatchingData* matchingData) {
     NLOGI("HelloCC", "ruleName: %s", NString.get(&matchingData->node.rule->ruleName));
     NLOGI("HelloCC", "        Match length: %s%d%s", NTCOLOR(HIGHLIGHT), matchingData->matchLength, NTCOLOR(STREAM_DEFAULT));
     NLOGI("HelloCC", "        Matched text: %s%s%s", NTCOLOR(HIGHLIGHT), matchingData->matchedText, NTCOLOR(STREAM_DEFAULT));
@@ -105,23 +105,23 @@ void destroyDeclaredVariables() {
 // Listeners
 //////////////////////////////////////
 
-boolean declarationListener(struct NCC_MatchingData* matchingData) {
+boolean declarationListener(NCC_MatchingData* matchingData) {
     NCC_matchASTNode(matchingData);
 
     // Get the variable name from the identifier child,
-    struct NCC_ASTNode* astNode = matchingData->node.node;
-    struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.getLast(&astNode->childNodes));
+    NCC_ASTNode* astNode = matchingData->node.node;
+    NCC_ASTNode* childNode = *((NCC_ASTNode**) NVector.getLast(&astNode->childNodes));
     NLOGI(0, "%sDeclare:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(&childNode->value));
     addDeclaredVariable(NString.get(&childNode->value));
     return True;
 }
 
-void undoDeclarationListener(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_Data* parentNode) {
+void undoDeclarationListener(NCC_ASTNode_Data* node, NCC_ASTNode_Data* parentNode) {
 
     // Get the variable name from the identifier child (if any),
-    struct NCC_ASTNode* astNode = node->node;
+    NCC_ASTNode* astNode = node->node;
     if (NVector.size(&astNode->childNodes)) {
-        struct NCC_ASTNode* childNode = *((struct NCC_ASTNode**) NVector.getLast(&astNode->childNodes));
+        NCC_ASTNode* childNode = *((NCC_ASTNode**) NVector.getLast(&astNode->childNodes));
         NLOGI(0, "%sUndeclare:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(&childNode->value));
         removeDeclaredVariable(NString.get(&childNode->value));
     }
@@ -129,12 +129,12 @@ void undoDeclarationListener(struct NCC_ASTNode_Data* node, struct NCC_ASTNode_D
     NCC_deleteASTNode(node, parentNode);
 }
 
-boolean validateAssignmentListener(struct NCC_MatchingData* matchingData) {
+boolean validateAssignmentListener(NCC_MatchingData* matchingData) {
 
     // Get the two identifier children,
-    struct NCC_ASTNode* astNode = matchingData->node.node;
-    struct NCC_ASTNode*  leftChildNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 0));
-    struct NCC_ASTNode* rightChildNode = *((struct NCC_ASTNode**) NVector.get(&astNode->childNodes, 1));
+    NCC_ASTNode* astNode = matchingData->node.node;
+    NCC_ASTNode*  leftChildNode = *((NCC_ASTNode**) NVector.get(&astNode->childNodes, 0));
+    NCC_ASTNode* rightChildNode = *((NCC_ASTNode**) NVector.get(&astNode->childNodes, 1));
 
     NLOGI(0, "%sAssignment  left:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(& leftChildNode->value));
     NLOGI(0, "%sAssignment right:%s %s", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT), NString.get(&rightChildNode->value));
@@ -284,16 +284,16 @@ void NMain() {
     NLOGI("", "%sStateful Parsing%s"  , NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
     NLOGI("", "%s================%s\n", NTCOLOR(GREEN_BOLD_BRIGHT), NTCOLOR(STREAM_DEFAULT));
 
-    struct NCC_RuleData ruleData;
-    NCC_initializeRuleData(&ruleData, &ncc, "", "", 0, 0, 0);
+    NCC_RuleData ruleData;
+    NCC_initializeRuleData(&ruleData, "", "", 0, 0, 0);
     NVector.initialize(&declaredVariables, 0, sizeof(NString));
 
     NCC_initializeNCC(&ncc);
-    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\\\t|\r|\n}^*"));
-    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")         ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode,           NCC_matchASTNode));
-    NCC_addRule(ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener,        declarationListener));
-    NCC_addRule(ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode, validateAssignmentListener));
-    NCC_addRule(ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode,           NCC_matchASTNode));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "", "{\\ |\\\t|\r|\n}^*"));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")         ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode,           NCC_matchASTNode));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "declaration", "${identifier};")                      ->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener,        declarationListener));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "assignment" , "${identifier}=${identifier};")        ->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode, validateAssignmentListener));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "document"   , "{${declaration}|${assignment}|${}}^*")->setListeners(&ruleData, NCC_createASTNode,       NCC_deleteASTNode,           NCC_matchASTNode));
 
     assert(&ncc, "AssignmentTest", "Test1:${} ${document}",
             "Test1:\n"
@@ -313,10 +313,10 @@ void NMain() {
 
     // Delete test,
     NCC_initializeNCC(&ncc);
-    NCC_addRule(ruleData.set(&ruleData, "", "{\\ |\\\t|\r|\n}^*")->setListeners(&ruleData, 0, 0, 0));
-    NCC_addRule(ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
-    NCC_addRule(ruleData.set(&ruleData, "specifier"  , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
-    NCC_addRule(ruleData.set(&ruleData, "declaration", "${specifier} ${} ${identifier};")->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "", "{\\ |\\\t|\r|\n}^*")->setListeners(&ruleData, 0, 0, 0));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "identifier" , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "specifier"  , "a-z|A-Z|_ {a-z|A-Z|_|0-9}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "declaration", "${specifier} ${} ${identifier};")->setListeners(&ruleData, NCC_createASTNode, undoDeclarationListener, declarationListener));
     assert(&ncc, "RollBackTest", "${declaration}|${declaration}", "int a;", True, 6, True);
     destroyDeclaredVariables();    
     NCC_destroyNCC(&ncc);

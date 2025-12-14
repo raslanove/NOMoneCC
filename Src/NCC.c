@@ -42,9 +42,8 @@
 
 typedef struct NCC_Node NCC_Node;
 
-static NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule);
+static NCC_Node* constructRuleTree(struct NCC* ncc, const char* ruleText);
 static NCC_Node* getNextNode(struct NCC* ncc, NCC_Node* parentNode, const char** in_out_rule);
-static NCC_Rule* getRule(struct NCC* ncc, const char* ruleName);
 static void switchStacks(struct NVector** stack1, struct NVector** stack2);
 static void pushASTStack(struct NCC* ncc, struct NVector* stack, int32_t stackMark);
 
@@ -209,12 +208,19 @@ static NCC_RuleData* ruleDataSetListeners(NCC_RuleData* ruleData, NCC_createASTN
     ruleData->createASTNodeListener = createNodeListener;
     ruleData->deleteASTNodeListener = deleteNodeListener;
     ruleData->ruleMatchListener = matchListener;
+
+    // Sanity check,
+    if (createNodeListener && !deleteNodeListener) {
+        NERROR("NCC", "ruleDataSetListeners(): a create AST node listener was provided with no delete listener for rule: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleData->ruleName), NTCOLOR(STREAM_DEFAULT));
+    } else if (!createNodeListener && deleteNodeListener) {
+        NERROR("NCC", "ruleDataSetListeners(): a delete AST node listener was provided with no create listener for rule: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleData->ruleName), NTCOLOR(STREAM_DEFAULT));
+    }
+
     return ruleData;
 }
 
-NCC_RuleData* NCC_initializeRuleData(NCC_RuleData* ruleData, struct NCC* ncc, const char* ruleName, const char* ruleText, NCC_createASTNodeListener createNodeListener, NCC_deleteASTNodeListener deleteNodeListener, NCC_ruleMatchListener matchListener) {
+NCC_RuleData* NCC_initializeRuleData(NCC_RuleData* ruleData, const char* ruleName, const char* ruleText, NCC_createASTNodeListener createNodeListener, NCC_deleteASTNodeListener deleteNodeListener, NCC_ruleMatchListener matchListener) {
 
-    ruleData->ncc = ncc;
     NString.initialize(&ruleData->ruleName, "%s", ruleName);
     NString.initialize(&ruleData->ruleText, "%s", ruleText);
     ruleData->createASTNodeListener = createNodeListener;
@@ -224,38 +230,19 @@ NCC_RuleData* NCC_initializeRuleData(NCC_RuleData* ruleData, struct NCC* ncc, co
     ruleData->set = ruleDataSet;
     ruleData->setListeners = ruleDataSetListeners;
 
+    // Sanity check,
+    if (createNodeListener && !deleteNodeListener) {
+        NERROR("NCC", "NCC_initializeRuleData(): a create AST node listener was provided with no delete listener for rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
+    } else if (!createNodeListener && deleteNodeListener) {
+        NERROR("NCC", "NCC_initializeRuleData(): a delete AST node listener was provided with no create listener for rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
+    }
+
     return ruleData;
 }
 
 void NCC_destroyRuleData(NCC_RuleData* ruleData) {
     NString.destroy(&ruleData->ruleName);
     NString.destroy(&ruleData->ruleText);
-}
-
-// Internal detail. Creates a rule without associating it with an NCC, something the user shouldn't
-// be able to do,
-static NCC_Rule* createRule(NCC_RuleData* ruleData) {
-
-    // Create rule tree,
-    const char* ruleText = NString.get(&ruleData->ruleText);
-    NCC_Node* ruleTree = constructRuleTree(ruleData->ncc, ruleText);
-    if (!ruleTree) {
-        NERROR("NCC", "createRule(): unable to construct rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
-        return 0;
-    }
-
-    // Create and initialize rule,
-    NCC_Rule* rule = NMALLOC(sizeof(NCC_Rule), "NCC.createRule() rule");
-    rule->tree = ruleTree;
-    rule->data = *ruleData;  // Copy all members. But note that, copying strings is dangerous due
-                             // to memory allocations. For every string in ruleData, we now have
-                             // two NStrings pointing to the same memory block.
-    // Just create new NStrings overwriting the ones we just copied,
-    const char* ruleName = NString.get(&ruleData->ruleName);
-    NString.initialize(&ruleData->ruleName, "%s", ruleName);
-    NString.initialize(&ruleData->ruleText, "%s", ruleText);
-
-    return rule;
 }
 
 static void destroyRule(NCC_Rule* rule) {
@@ -1319,7 +1306,7 @@ static NCC_Node* createSubstituteNode(struct NCC* ncc, NCC_Node* parentNode, con
     ruleName[ruleNameLength] = 0;
 
     // Look for a match within our defined rules,
-    NCC_Rule* rule = getRule(ncc, ruleName);
+    NCC_Rule* rule = NCC_getRule(ncc, ruleName);
     if (!rule) {
         NERROR("NCC", "createSubstituteNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
         NFREE(ruleName, "NCC.createSubstituteNode() ruleName 1");
@@ -1519,7 +1506,7 @@ static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, cons
             NCC_Rule* rule=0;
             if (!verificationModeSet) {
                 // Check if the rule exists,
-                rule = getRule(ncc, NString.get(&ruleName));
+                rule = NCC_getRule(ncc, NString.get(&ruleName));
                 if (!rule) {
                     NERROR("NCC", "createSelectionNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT));
                     goto finish;
@@ -1623,20 +1610,25 @@ static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, cons
 // Helper functions
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// ...xxx TODO: Continue documentation from here downward...
-
 // Constructs a rule tree from rule text,
-static NCC_Node* constructRuleTree(struct NCC* ncc, const char* rule) {
+static NCC_Node* constructRuleTree(struct NCC* ncc, const char* ruleText) {
 
+    // Every rule tree must start with a root node,
     NCC_Node* rootNode = createRootNode();
 
+    // Start parsing the rule text,
     NCC_Node* currentNode = rootNode;
-    const char* remainingSubRule = rule;
-    int32_t errorsBeginning = NError.observeErrors();
+    const char* remainingText = ruleText;
+    int32_t oldErrorsCount = NError.observeErrors();
     do {
-        currentNode = getNextNode(ncc, currentNode, &remainingSubRule);
-        if (NError.observeErrors()>errorsBeginning) break;
-        if (!currentNode) return rootNode; // Done constructing the tree. No errors and no new nodes.
+        // Parse next node,
+        currentNode = getNextNode(ncc, currentNode, &remainingText);
+
+        // If new errors observed,
+        if (NError.observeErrors()>oldErrorsCount) break;
+
+        // No errors. If we no longer get new nodes, then we've finished the text,
+        if (!currentNode) return rootNode;
     } while (True);
 
     // Failed,
@@ -1671,16 +1663,6 @@ static NCC_Node* getNextNode(struct NCC* ncc, NCC_Node* parentNode, const char**
     }
 }
 
-// Returns the rule with the specified name from this ncc if found, NULL otherwise,
-static NCC_Rule* getRule(struct NCC* ncc, const char* ruleName) {
-
-    for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
-        NCC_Rule* currentRule = *((NCC_Rule**) NVector.get(&ncc->rules, i));
-        if (NCString.equals(ruleName, NString.get(&currentRule->data.ruleName))) return currentRule;
-    }
-    return 0;
-}
-
 // Could as well be named switch vectors,
 static void switchStacks(struct NVector** stack1, struct NVector** stack2) {
     struct NVector* temp = *stack1;
@@ -1708,14 +1690,24 @@ static void pushASTStack(struct NCC* ncc, struct NVector* stack, int32_t stackMa
     NVector.resize(stack, stackMark);
 }
 
+// Discards any AST nodes created when matching the provided tree by calling the appropriate delete
+// listeners,
 static void discardMatchingResult(MatchedASTTree* tree) {
 
     struct NVector* stack = *tree->astNodesStack;
     NCC_ASTNode_Data currentNode;
     while (NVector.size(stack) > tree->astStackMark) {
         NVector.popBack(stack, &currentNode);
+
+        // Get that specific rule's delete listener,
         NCC_deleteASTNodeListener deleteListener = currentNode.rule->deleteASTNodeListener;
-        if (deleteListener) deleteListener(&currentNode, tree->astParentNode);
+        if (deleteListener) {
+            deleteListener(&currentNode, tree->astParentNode);
+        } else {
+            // This shouldn't be reachable. When a create listener is specified, a delete one MUST
+            // be provided,
+            //NERROR("NCC", "discardMatchingResult(): no delete listener for rule: %s%s%s. Unable to discard AST node", NTCOLOR(HIGHLIGHT), NString.get(&currentNode.rule->ruleName), NTCOLOR(STREAM_DEFAULT));
+        }
     }
 }
 
@@ -1740,7 +1732,7 @@ static boolean matchRuleTree(
     // Return immediately if termination didn't take place,
     if (!outMatchingResult->result.terminate) return matched;
 
-    // Termination took place,
+    // Termination took place. We still report the maximum length matched during the rejected match,
     outMatchingResult->result.matchLength += lengthToAddIfTerminated;
 
     // Discard trees,
@@ -1761,12 +1753,14 @@ struct NCC* NCC_initializeNCC(struct NCC* ncc) {
     NVector.initialize(&ncc->maxMatchRuleStack, 0, sizeof(const char*));
     for (int32_t i=0; i<NCC_AST_NODE_STACKS_COUNT; i++) ncc->astNodeStacks[i] = NVector.create(0, sizeof(NCC_ASTNode_Data));
 
-    // Create a rule to make the matching function a lot simpler,
+    // Only substitute nodes push AST nodes. When we match a rule, we only match its rule tree, not
+    // a substitute node referring to the rule. As such, the rule being matched won't appear in the
+    // AST tree. We use "matchRule" to wrap rules being matched into a substitute node,
     NCC_RuleData matchRuleData;
-    NCC_initializeRuleData(&matchRuleData, ncc, NCC_MATCH_RULE_NAME, "", 0, 0, 0);
-    NCC_addRule(&matchRuleData);
+    NCC_initializeRuleData(&matchRuleData, NCC_MATCH_RULE_NAME, "", 0, 0, 0);
+    NCC_addRule(ncc, &matchRuleData);
     NCC_destroyRuleData(&matchRuleData);
-    ncc->matchRule = getRule(ncc, NCC_MATCH_RULE_NAME);
+    ncc->matchRule = NCC_getRule(ncc, NCC_MATCH_RULE_NAME);
 
     return ncc;
 }
@@ -1793,32 +1787,99 @@ void NCC_destroyAndFreeNCC(struct NCC* ncc) {
     NFREE(ncc, "NCC.NCC_destroyAndFreeNCC() ncc");
 }
 
-boolean NCC_addRule(NCC_RuleData* ruleData) {
+// Creates a rule and adds it to the NCC,
+boolean NCC_addRule(struct NCC* ncc, NCC_RuleData* ruleData) {
 
     // Check if a rule with this name already exists,
     const char* ruleName = NString.get(&ruleData->ruleName);
-    if (getRule(ruleData->ncc, ruleName)) {
+    if (NCC_getRule(ncc, ruleName)) {
         NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s. A rule with the same name exists.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
-    NCC_Rule* rule = createRule(ruleData);
-    if (!rule) {
-        NERROR("NCC", "NCC_addRule(): unable to create rule %s%s%s: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&ruleData->ruleText), NTCOLOR(STREAM_DEFAULT));
+    // Create rule tree,
+    const char* ruleText = NString.get(&ruleData->ruleText);
+    NCC_Node* ruleTree = constructRuleTree(ncc, ruleText);
+    if (!ruleTree) {
+        NERROR("NCC", "NCC_addRule(): unable to construct rule tree: %s%s%s", NTCOLOR(HIGHLIGHT), ruleText, NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
-    struct NCC* ncc = ruleData->ncc;
+    // Create and initialize rule,
+    NCC_Rule* rule = NMALLOC(sizeof(NCC_Rule), "NCC.NCC_addRule() rule");
+    rule->tree = ruleTree;
+    rule->data = *ruleData;  // Copy all members. But note that, copying strings is dangerous due
+                             // to memory allocations. For every string in ruleData, we now have
+                             // two NStrings pointing to the same memory block.
+                             // Just create new NStrings overwriting the ones we just copied,
+    NString.initialize(&rule->data.ruleName, "%s", ruleName);
+    NString.initialize(&rule->data.ruleText, "%s", ruleText);
+
+    // Add to ncc,
     NVector.pushBack(&ncc->rules, &rule);
     return True;
 }
 
-boolean updateRuleText(struct NCC* ncc, NCC_Rule* rule, const char* newRuleText) {
+// Returns the rule with the specified name from this ncc if found, NULL otherwise,
+NCC_Rule* NCC_getRule(struct NCC* ncc, const char* ruleName) {
+    for (int32_t i=NVector.size(&ncc->rules)-1; i>=0; i--) {
+        NCC_Rule* currentRule = *((NCC_Rule**) NVector.get(&ncc->rules, i));
+        if (NCString.equals(ruleName, NString.get(&currentRule->data.ruleName))) return currentRule;
+    }
+    return 0;
+}
+
+// Returns the rule data of the specified rule (duh!),
+NCC_RuleData* NCC_getRuleData(struct NCC* ncc, const char* ruleName) {
+    NCC_Rule* rule = NCC_getRule(ncc, ruleName);
+    if (!rule) {
+        NERROR("NCC", "NCC_getRuleData(): couldn't find rule: %s%s%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+    return &rule->data;
+}
+
+boolean NCC_updateRule(struct NCC* ncc, NCC_RuleData* ruleData) {
+
+    // Fetch rule,
+    const char* ruleName = NString.get(&ruleData->ruleName);
+    NCC_Rule* rule = NCC_getRule(ncc, ruleName);
+    if (!rule) {
+        NERROR("NCC", "NCC_updateRule(): unable to update rule %s%s%s. Rule doesn't exist.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
+        return False;
+    }
+
+    // Create new rule tree,
+    const char* ruleText = NString.get(&ruleData->ruleText);
+    if (!NCC_updateRuleText(ncc, rule, ruleText)) return False;
+
+    // Reinitialize rule data by copying all members. But note that copying strings is dangerous due
+    // to memory allocations. Strings have to be handled carefully,
+    if (ruleData != &rule->data) {   // We needn't copy onto ourselves. It's dangerous in fact.
+
+        // Keep our old strings,
+        struct NString ruleNameString = rule->data.ruleName;
+        struct NString ruleTextString = rule->data.ruleText;
+
+        // Overwrite,
+        rule->data = *ruleData;
+
+        // Restore our old strings,
+        rule->data.ruleName = ruleNameString;
+        rule->data.ruleText = ruleTextString;
+        NString.set(&rule->data.ruleName, "%s", ruleName);
+        NString.set(&rule->data.ruleText, "%s", ruleText);
+    }
+
+    return True;
+}
+
+boolean NCC_updateRuleText(struct NCC* ncc, NCC_Rule* rule, const char* newRuleText) {
 
     // Create new rule tree,
     NCC_Node* ruleTree = constructRuleTree(ncc, newRuleText);
     if (!ruleTree) {
-        NERROR("NCC", "updateRuleText(): unable to construct rule tree: %s%s%s. Failed to update rule: %s%s%s.", NTCOLOR(HIGHLIGHT), newRuleText, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "NCC_updateRuleText(): unable to construct rule tree: %s%s%s. Failed to update rule: %s%s%s.", NTCOLOR(HIGHLIGHT), newRuleText, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NString.get(&rule->data.ruleName), NTCOLOR(STREAM_DEFAULT));
         return False;
     }
 
@@ -1832,53 +1893,31 @@ boolean updateRuleText(struct NCC* ncc, NCC_Rule* rule, const char* newRuleText)
     return True;
 }
 
-boolean NCC_updateRule(NCC_RuleData* ruleData) {
+boolean NCC_match(struct NCC* ncc, NCC_Rule* rule, const char* text, NCC_MatchingResult* outResult, NCC_ASTNode_Data* outNode) {
 
-    // Fetch rule,
-    struct NCC* ncc = ruleData->ncc;
-    const char* ruleName = NString.get(&ruleData->ruleName);
-    NCC_Rule* rule = getRule(ncc, ruleName);
-    if (!rule) {
-        NERROR("NCC", "NCC_updateRule(): unable to update rule %s%s%s. Rule doesn't exist.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
-        return False;
+    // Wrap the rule into a substitute node so it can appear in the AST tree,
+    NCC_Node* ruleTreeToBeMatched;
+    if (rule->data.createASTNodeListener || rule->data.ruleMatchListener) {
+
+        // Prepare the wrapping rule text,
+        struct NString wrappingRuleText;
+        NString.initialize(&wrappingRuleText, "${%s}", NString.get(&rule->data.ruleName));
+
+        // Only update if the rule to be matched changed since the last time,
+        if (!NCString.equals(
+                NString.get(&ncc->matchRule->data.ruleText),
+                NString.get(&wrappingRuleText))) {
+            NCC_updateRuleText(ncc, ncc->matchRule, NString.get(&wrappingRuleText));
+        }
+
+        // Cleanup and set the wrapping rule's tree as the one to be matched,
+        NString.destroy(&wrappingRuleText);
+        ruleTreeToBeMatched = ncc->matchRule->tree;
+
+    } else {
+        // The rule won't show in the tree anyway, match directly,
+        ruleTreeToBeMatched = rule->tree;
     }
-
-    // Create new rule tree,
-    const char* ruleText = NString.get(&ruleData->ruleText);
-    if (!updateRuleText(ncc, rule, ruleText)) return False;
-
-    // Reinitialize rule data by copying all members. But note that copying strings is dangerous due
-    // to memory allocations. Strings have to be handled manually,
-    struct NString ruleNameString = rule->data.ruleName;
-    struct NString ruleTextString = rule->data.ruleText;
-    rule->data = *ruleData;
-    rule->data.ruleName = ruleNameString;
-    rule->data.ruleText = ruleTextString;
-    NString.set(&rule->data.ruleName, "%s", ruleName);
-    NString.set(&rule->data.ruleText, "%s", ruleText);
-
-    return True;
-}
-
-boolean NCC_setRootRule(struct NCC* ncc, const char* ruleName) {
-
-    // Find the rule with this name,
-    NCC_Rule* rule = getRule(ncc, ruleName);
-    if (!rule) {
-        NERROR("NCC", "NCC_setRootRule(): unable to set root rule %s%s%s. Rule doesn't exist.", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
-        return False;
-    }
-
-    // Prepare the match rule,
-    struct NString newRuleText;
-    NString.initialize(&newRuleText, "${%s}", ruleName);
-    boolean success = updateRuleText(ncc, ncc->matchRule, NString.get(&newRuleText));
-    NString.destroy(&newRuleText);
-
-    return success;
-}
-
-boolean NCC_match(struct NCC* ncc, const char* text, NCC_MatchingResult* outResult, NCC_ASTNode_Data* outNode) {
 
     // Prepare for matching,
     ncc->maxMatchLength = 0;
@@ -1887,13 +1926,13 @@ boolean NCC_match(struct NCC* ncc, const char* text, NCC_MatchingResult* outResu
 
     // Match,
     MatchedASTTree ruleTree;
-    boolean matched = matchRuleTree(ncc, ncc->matchRule->tree, text,
+    boolean matched = matchRuleTree(ncc, ruleTreeToBeMatched, text,
                                     &ruleTree, 0, &ncc->astNodeStacks[0],
                                     0, (MatchedASTTree *[]) {&ruleTree}, 1);
     *outResult = ruleTree.result;
     if (matched && !ruleTree.result.terminate) {
 
-        // Get the node and return it,
+        // If an output node is expected, return it,
         if (outNode) {
             // TODO: .... there could be more than one node on the stack?...
             if (!NVector.popBack(ncc->astNodeStacks[0], outNode)) NSystemUtils.memset(outNode, 0, sizeof(NCC_ASTNode_Data));
@@ -1915,18 +1954,27 @@ boolean NCC_match(struct NCC* ncc, const char* text, NCC_MatchingResult* outResu
 // Generic AST construction methods
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// The user is supposed to define his own AST nodes and listeners, but for convenience, we provide
+// a generic implementation that fits most use cases.
+
 void* NCC_createASTNode(NCC_RuleData* ruleData, NCC_ASTNode_Data* astParentNodeData) {
 
+    // Create an instance of our user-defined AST node (in this case, NCC_ASTNode). This function
+    // can return a pointer to anything. It's the listeners' job to make sense of it,
     NCC_ASTNode* astNode = NMALLOC(sizeof(NCC_ASTNode), "NCC.NCC_createASTNode() astNode");
     NString.initialize(&astNode->name, "%s", NString.get(&ruleData->ruleName));
     NString.initialize(&astNode->value, "not set yet");
     NVector.initialize(&astNode->childNodes, 0, sizeof(NCC_ASTNode*));
     astNode->rule = ruleData;
 
+    // Attach this node to the parent. Again, this is our user-defined implementation, which
+    // supports having children,
     if (astParentNodeData) {
         NCC_ASTNode* parentASTNode = astParentNodeData->node;
         NVector.pushBack(&parentASTNode->childNodes, &astNode);
     }
+
+    // Return whatever we cooked in here,
     return astNode;
 }
 
@@ -1936,12 +1984,19 @@ static inline void deleteASTNode(NCC_ASTNode* astNode, NCC_ASTNode_Data* astPare
     NString.destroy(&astNode->name);
     NString.destroy(&astNode->value);
 
-    // Delete children,
+    // Delete children. Luckily, the last AST node to be created is the first to be deleted. So, if
+    // all nodes on a stack are being deleted, the children are collected first (and detached from
+    // the parent), then the parent is deleted. In such case, there won't be an children, and the
+    // loop below will do no harm,
     NCC_ASTNode* currentChild;
     while (NVector.popBack(&astNode->childNodes, &currentChild)) {
         if (currentChild->rule->deleteASTNodeListener == NCC_deleteASTNode) {
             // Using the generic listener,
             deleteASTNode(currentChild, 0); // Needn't remove from parent because parent is dying anyway.
+        } else if (!currentChild->rule->deleteASTNodeListener) {
+            // This shouldn't be reachable. When a create listener is specified, a delete one MUST
+            // be provided,
+            //NERROR("NCC", "deleteASTNode(): no delete listener for rule: %s%s%s. Unable to discard AST node", NTCOLOR(HIGHLIGHT), NString.get(&currentChild->rule->ruleName), NTCOLOR(STREAM_DEFAULT));
         } else {
             // Has a user-defined listener,
             NCC_ASTNode_Data nodeData;
@@ -1971,10 +2026,18 @@ void NCC_deleteASTNode(NCC_ASTNode_Data* node, NCC_ASTNode_Data* astParentNode) 
 }
 
 boolean NCC_matchASTNode(NCC_MatchingData* matchingData) {
+
+    // When an AST node is created, it's exact value is still not parsed yet. Only when the match
+    // listener is called is the value defined. Set the value here. You may also alter the match
+    // length or terminate the matching,
     NCC_ASTNode* astNode = matchingData->node.node;
     NString.set(&astNode->value, "%s", matchingData->matchedText);
     return True;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Pretty printing trees
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // TODO: convert into a generic function that can print any PrintableTree { data, getChild(index), getChildrenCount(), getName(), getValue() ...etc },
 //       then create NCC_ASTTreeToString() that wraps NCC_ASTNode in PrintableTree and uses it.
