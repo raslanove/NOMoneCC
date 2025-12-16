@@ -455,7 +455,7 @@ static NCC_Node* createLiteralRangeNode(unsigned char rangeStart, unsigned char 
 // Literals and literal-range are different from other nodes in one distinct way. Every other node type that can be
 // encountered in rule text can be identified immediately based on how it's written. For example:
 //    => subrule start with a "{".
-//    => substitute starts with an "$" (TODO: add "@").
+//    => substitute starts with an "$" or an "@".
 //    => selection starts with a "#".
 //    => anything starts with a "*".
 //    => or starts with a "|", while repeat starts with "^*" (the are only identified when their special character is
@@ -465,14 +465,14 @@ static NCC_Node* createLiteralRangeNode(unsigned char rangeStart, unsigned char 
 // That's why we have this section, and in particular the function handleLiteral() to handle any escaped characters and
 // characters not preserved for the other nodes.
 
-// Literals that can't follow a hyphen (-) in a literal-range,
+// Literals that can't follow a hyphen (-) without escaping in a literal-range,
 static boolean isReserved(const char literal) {
     switch (literal) {
         case  ' ':
         case '\t':
         case  '$':
+        case  '@':
         case  '#':
-        // TODO: @ ?
         case  '*':
         case  '{':
         case  '}':
@@ -1116,6 +1116,7 @@ static NCC_Node* createAnythingNode(NCC_Node* parentNode, const char** in_out_ru
 
 typedef struct SubstituteNodeData {
     NCC_Rule* rule;
+    boolean silent;
 } SubstituteNodeData;
 
 static boolean substituteNodeMatch(NCC_Node* node, struct NCC* ncc, const char* text, NCC_ASTNode_Data* astParentNode, NCC_MatchingResult* outResult) {
@@ -1140,12 +1141,19 @@ static boolean substituteNodeMatch(NCC_Node* node, struct NCC* ncc, const char* 
     // Variables needed for cleanup and return value,
     boolean newAstNodeCreated=False, deleteAstNode=False, discardRule, accepted;
 
+    // Silence the ncc if this node is silent,
+    boolean nccOldSilentState = ncc->silent;
+    ncc->silent |= nodeData->silent;
+
     // Prepare an AST node data (newAstNode) and attach a new AST node to it,
     NCC_ASTNode_Data newAstNode = { .rule=&nodeData->rule->data };
     NCC_createASTNodeListener createASTNode = newAstNode.rule->createASTNodeListener;
-    if (createASTNode) { // TODO: check if not silent...
-        newAstNode.node = createASTNode ? createASTNode(newAstNode.rule, astParentNode) : 0;
-        newAstNodeCreated = deleteAstNode = (newAstNode.node!=0);
+    if (createASTNode && !ncc->silent) {
+        newAstNode.node = createASTNode(newAstNode.rule, astParentNode);
+        newAstNodeCreated = (newAstNode.node!=0);
+
+        // If we called create, we should call delete, even if it returned a null,
+        deleteAstNode = True;
     }
 
     // Match rule on a temporary stack,
@@ -1162,8 +1170,7 @@ static boolean substituteNodeMatch(NCC_Node* node, struct NCC* ncc, const char* 
     }
 
     // Found a match (an unconfirmed one, though). Report,
-    // TODO: check if not silent...
-    if (nodeData->rule->data.ruleMatchListener) {
+    if (nodeData->rule->data.ruleMatchListener && !ncc->silent) {
 
         // Copy the matched text so that we can zero terminate it,
         int32_t matchLength = rule.result.matchLength;
@@ -1191,6 +1198,9 @@ static boolean substituteNodeMatch(NCC_Node* node, struct NCC* ncc, const char* 
             goto finish;
         }
     }
+
+    // Finished matching our rule, time to restore NCC's silence state,
+    ncc->silent = nccOldSilentState;
 
     // Confirmed match. If the total match length (not just this node, the ENTIRE match operation)
     // exceeds the maximum recorded this far, we need to collect some information for possible error
@@ -1265,6 +1275,7 @@ static boolean substituteNodeMatch(NCC_Node* node, struct NCC* ncc, const char* 
         NCC_deleteASTNodeListener deleteListener = newAstNode.rule->deleteASTNodeListener;
         if (deleteListener) deleteListener(&newAstNode, astParentNode);
     }
+    ncc->silent = nccOldSilentState;
     return accepted;
 }
 
@@ -1277,9 +1288,22 @@ static void substituteNodeDeleteTree(NCC_Node* tree) {
 
 static NCC_Node* createSubstituteNode(struct NCC* ncc, NCC_Node* parentNode, const char** in_out_rule) {
 
-    // TODO: handle '@'...
-    // Skip the '$'.
-    const char* ruleBeginning = (*in_out_rule)++;
+    // Check if this node is silent,
+    const char* ruleBeginning = *in_out_rule;
+    boolean silent;
+    char sign = *ruleBeginning;
+    if (sign == '@') {
+        silent = True;
+    } else if (sign == '$') {
+        silent = False;
+    } else {
+        // This should not be reachable,
+        NERROR("NCC", "createSubstituteNode(): a substitute node must start by an unescaped %s@%s or %s$%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        return 0;
+    }
+
+    // Skip the '$' or '@',
+    (*in_out_rule)++;
 
     // Skip the '{',
     if (*((*in_out_rule)++) != '{') {
@@ -1317,6 +1341,7 @@ static NCC_Node* createSubstituteNode(struct NCC* ncc, NCC_Node* parentNode, con
     SubstituteNodeData* nodeData = NMALLOC(sizeof(SubstituteNodeData), "NCC.createSubstituteNode() nodeData");
     NCC_Node* node = genericCreateNode(NCC_NodeType.SUBSTITUTE, nodeData);
     nodeData->rule = rule;
+    nodeData->silent = silent;
 
     #if NCC_VERBOSE
     NLOGI("NCC", "Created substitute node: %s${%s}%s", NTCOLOR(HIGHLIGHT), ruleName, NTCOLOR(STREAM_DEFAULT));
@@ -1332,7 +1357,7 @@ static NCC_Node* createSubstituteNode(struct NCC* ncc, NCC_Node* parentNode, con
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 typedef struct SelectionNodeData {
-    struct NVector    attemptedRules;  // NCC_Rule*
+    struct NVector    attemptedRules;  // SubstituteNodeData
     struct NVector verificationRules;  // NCC_Rule*
     NCC_Node* substituteNode;   // Used in matching.
     boolean matchIfIncluded;    // Indicates the verification mode. If true, accept if the matched rule is included in the verification rules, reject otherwise.
@@ -1354,13 +1379,12 @@ static boolean selectionNodeMatch(NCC_Node* node, struct NCC* ncc, const char* t
     int32_t currentNodeStackIndex=1;    // We'll match on temporary stacks 1 and 2, switching as needed.
     int32_t attemptedRulesCount = NVector.size(&nodeData->attemptedRules);
     for (int32_t i=0; i<attemptedRulesCount; i++) {
-        NCC_Rule* attemptedRule = *(NCC_Rule**) NVector.get(&nodeData->attemptedRules, i);
+        SubstituteNodeData* attemptedRuleData = (SubstituteNodeData*) NVector.get(&nodeData->attemptedRules, i);
 
         // Matching through a substitute node, this way the top-most rule can be pushed,
         // We'll wrap the rule into a substitute node. This is very convenient, for we can just use
         // the substitute node match, and it'll take care of AST handling for us,
-        // TODO: handle silence...
-        ((SubstituteNodeData*) nodeData->substituteNode->data)->rule = attemptedRule;
+        *((SubstituteNodeData*) nodeData->substituteNode->data) = *attemptedRuleData;
         NVector.pushBack(&ncc->parentStack, &node);
         MatchTree(rule, nodeData->substituteNode, text, astParentNode, astNodeStacks[currentNodeStackIndex], 0, {&rule}, 1)
         NVector.popBack(&ncc->parentStack, &node);
@@ -1380,7 +1404,7 @@ static boolean selectionNodeMatch(NCC_Node* node, struct NCC* ncc, const char* t
 
                 // Set the new one as the longest,
                 longestMatchRule = rule;
-                longestMatchRuleName = NString.get(&attemptedRule->data.ruleName);
+                longestMatchRuleName = NString.get(&attemptedRuleData->rule->data.ruleName);
 
                 // Switch to the other temporary stack, to be able to discard this rule's stack if
                 // a better match is found,
@@ -1393,7 +1417,7 @@ static boolean selectionNodeMatch(NCC_Node* node, struct NCC* ncc, const char* t
             // This is the first match. It's the longest so far,
             matchFound = True;
             longestMatchRule = rule;
-            longestMatchRuleName = NString.get(&attemptedRule->data.ruleName);
+            longestMatchRuleName = NString.get(&attemptedRuleData->rule->data.ruleName);
 
             // Switch to the other temporary stack, to be able to discard this rule's stack if
             // a better match is found,
@@ -1463,6 +1487,24 @@ static void selectionNodeDeleteTree(NCC_Node* tree) {
     NFREE(tree      , "NCC.selectionNodeDeleteTree() tree"      );
 }
 
+static NCC_Rule* getAttemptedRule(SelectionNodeData* nodeData, const char* ruleName) {
+    int32_t rulesCount = NVector.size(&nodeData->attemptedRules);
+    for (int32_t i=0; i<rulesCount; i++) {
+        SubstituteNodeData* attemptedRule = (SubstituteNodeData*) NVector.get(&nodeData->attemptedRules, i);
+        if (NCString.equals(ruleName, NString.get(&attemptedRule->rule->data.ruleName))) return attemptedRule->rule;
+    }
+    return 0; // Not found.
+}
+
+static NCC_Rule* getVerificationRule(SelectionNodeData* nodeData, const char* ruleName) {
+    int32_t rulesCount = NVector.size(&nodeData->verificationRules);
+    for (int32_t i=0; i<rulesCount; i++) {
+        NCC_Rule* verificationRule = *(NCC_Rule**) NVector.get(&nodeData->verificationRules, i);
+        if (NCString.equals(ruleName, NString.get(&verificationRule->data.ruleName))) return verificationRule;
+    }
+    return 0; // Not found.
+}
+
 static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, const char** in_out_rule) {
 
     // Skip the '#'.
@@ -1470,24 +1512,45 @@ static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, cons
 
     // Skip the '{',
     if (*((*in_out_rule)++) != '{') {
-        NERROR("NCC", "createSelectionNode(): unescaped %s#%ss must be followed by %s{%ss", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT));
+        NERROR("NCC", "createSelectionNode(): unescaped %s#%ss must be followed by %s{%ss, found %s%c%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning[1], NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
         return 0;
     }
 
     // Prepare data structures,
     SelectionNodeData* nodeData = NMALLOC(sizeof(SelectionNodeData), "NCC.createSelectionNode() nodeData");
-    NVector.initialize(&nodeData->   attemptedRules, 0, sizeof(NCC_Rule*));
-    NVector.initialize(&nodeData->verificationRules, 0, sizeof(NCC_Rule*));
+    NVector.initialize(&nodeData->   attemptedRules, 0, sizeof(SubstituteNodeData));
+    NVector.initialize(&nodeData->verificationRules, 0, sizeof(NCC_Rule*         ));
     nodeData->matchIfIncluded = False;
 
     // Parse the node text,
     struct NString ruleName;
     NString.initialize(&ruleName, "");
     boolean verificationModeSet=False;
+    boolean nextRuleIsSilent=False;
     do {
         char currentChar = *((*in_out_rule)++);
 
-        // TODO: allow having $ or @ or nothing before individual subrules, to indicate pushing/non-pushing...
+        // Handle silence,
+        if (currentChar=='$' || currentChar=='@') {
+            // We accept $ and @ in the attempted rules list only,
+            if (verificationModeSet) {
+                NERROR("NCC", "createSelectionNode(): %s%c%s is irrelevant in the verification rules list in %s%s%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                goto finish;
+            }
+
+            // Set the silence state of the next rule,
+            if (currentChar=='@') nextRuleIsSilent = True;
+
+            // Make sure we are followed by an open bracket '{',
+            char nextChar = *((*in_out_rule)++);
+            if (nextChar!='{') {
+                NERROR("NCC", "createSelectionNode(): %s%c%s must be immediately followed by an %s{%s in %s%s%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                goto finish;
+            }
+            currentChar = nextChar;
+        }
+
+        // Parse rule,
         if (currentChar=='{') {
 
             // Parse rule name,
@@ -1508,31 +1571,45 @@ static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, cons
                 // Check if the rule exists,
                 rule = NCC_getRule(ncc, NString.get(&ruleName));
                 if (!rule) {
-                    NERROR("NCC", "createSelectionNode(): couldn't find a rule named: %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT));
+                    NERROR("NCC", "createSelectionNode(): couldn't find a rule named: %s%s%s used in %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
                     goto finish;
                 }
             } else {
                 // Verification rules must be a subset of the attempted rules list. Look for this
                 // rule in the attempted rules list,
-                int32_t attemptedRulesCount = NVector.size(&nodeData->attemptedRules);
-                for (int32_t i=0; i<attemptedRulesCount; i++) {
-                    NCC_Rule* attemptedRule = *(NCC_Rule**) NVector.get(&nodeData->attemptedRules, i);
-                    if (NCString.equals(NString.get(&ruleName), NString.get(&attemptedRule->data.ruleName))) {
-                        // Rule found,
-                        rule = attemptedRule;
-                        break;
-                    }
-                }
-
-                // If not found,
+                rule = getAttemptedRule(nodeData, NString.get(&ruleName));
                 if (!rule) {
-                    NERROR("NCC", "createSelectionNode(): couldn't find a rule named: %s%s%s in the attempted rules list", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT));
+                    NERROR("NCC", "createSelectionNode(): couldn't find a rule named: %s%s%s in the attempted rules list in %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
                     goto finish;
                 }
             }
 
             // Add to the appropriate list,
-            NVector.pushBack(verificationModeSet ? &nodeData->verificationRules : &nodeData->attemptedRules, &rule);
+            if (verificationModeSet) {
+                if (getVerificationRule(nodeData, NString.get(&ruleName))) {
+                    NERROR("NCC", "createSelectionNode(): rule: %s%s%s is already in the verification rules list of %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                    goto finish;
+                }
+                NVector.pushBack(&nodeData->verificationRules, &rule);
+
+                // If the verification rules exclude all the attempted rules,
+                if (!nodeData->matchIfIncluded &&
+                    NVector.size(&nodeData->attemptedRules) == NVector.size(&nodeData->verificationRules)) {
+                    NERROR("NCC", "createSelectionNode(): Selection node would never match anything: %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                    goto finish;
+                }
+            } else {
+                if (getAttemptedRule(nodeData, NString.get(&ruleName))) {
+                    NERROR("NCC", "createSelectionNode(): rule: %s%s%s is already in the attempted rules list of %s%s%s", NTCOLOR(HIGHLIGHT), NString.get(&ruleName), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                    goto finish;
+                }
+
+                // In the attempted rules list, we don't add (NCC_Rule*)s. We need to keep tack of
+                // silence too, so we add (SubstituteNodeData)s instead,
+                SubstituteNodeData ruleData = { .rule=rule, .silent=nextRuleIsSilent };
+                NVector.pushBack(&nodeData->attemptedRules, &ruleData);
+                nextRuleIsSilent = False;
+            }
 
         } else if (currentChar=='}') {
 
@@ -1542,9 +1619,9 @@ static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, cons
                 goto finish;
             }
 
-            // If an == operator was specified but no verification rules followed,
-            if (nodeData->matchIfIncluded && !NVector.size(&nodeData->verificationRules)) {
-                NERROR("NCC", "createSelectionNode(): Selection node would never match anything: %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+            // If an == or != operator was specified but no verification rules followed,
+            if (verificationModeSet && !NVector.size(&nodeData->verificationRules)) {
+                NERROR("NCC", "createSelectionNode(): %s%c=%s what?: %s%s%s", NTCOLOR(HIGHLIGHT), nodeData->matchIfIncluded ? '=' : '!', NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
                 goto finish;
             }
 
@@ -1554,9 +1631,15 @@ static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, cons
             // Just skip.
         } else if ((currentChar == '=') || (currentChar == '!')) {
 
+            // If no attempted rules specified,
+            if (!NVector.size(&nodeData->attemptedRules)) {
+                NERROR("NCC", "createSelectionNode(): Can't set matching mode without providing any attempted rules in %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                goto finish;
+            }
+
             // If we've already seen an operator before,
             if (verificationModeSet) {
-                NERROR("NCC", "createSelectionNode(): Can't set matching mode more than once in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                NERROR("NCC", "createSelectionNode(): Can't set matching mode more than once in %s%s%s", NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
                 goto finish;
             }
 
@@ -1568,15 +1651,28 @@ static NCC_Node* createSelectionNode(struct NCC* ncc, NCC_Node* parentNode, cons
             // keep it to look like a logic operator for C junkies like me (C language, not Cocaine),
             char nextChar = *((*in_out_rule)++);
             if (nextChar != '=') {
-                NERROR("NCC", "createSelectionNode(): expected %s%c=%s, found %s%c%c%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, nextChar, NTCOLOR(STREAM_DEFAULT));
+                NERROR("NCC", "createSelectionNode(): expected %s%c=%s, found %s%c%c%s in %s%s%s", NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, nextChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
                 goto finish;
             }
         } else if (!currentChar) {
             NERROR("NCC", "createSelectionNode(): couldn't find a matching %s}%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
             goto finish;
         } else {
-            // TODO: add $ and @...
-            NERROR("NCC", "createSelectionNode(): expected %s==%s or %s!=%s or %s{%s, found %s%c%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT));
+            int32_t    attemptedRulesCount = NVector.size(&nodeData->attemptedRules);
+            int32_t verificationRulesCount = NVector.size(&nodeData->verificationRules);
+            if (!attemptedRulesCount) {
+                NERROR("NCC", "createSelectionNode(): expected %s@%s or %s$%s or %s{%s, found %s%c%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+            } else if (!verificationModeSet) {
+                NERROR("NCC", "createSelectionNode(): expected %s@%s or %s$%s or %s{%s or %s==%s or %s!=%s or %s}%s, found %s%c%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+            } else {
+                if (!verificationRulesCount) {
+                    NERROR("NCC", "createSelectionNode(): expected %s{%s, found %s%c%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                } else if (verificationRulesCount<attemptedRulesCount) {
+                    NERROR("NCC", "createSelectionNode(): expected %s{%s or %s}%s, found %s%c%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                } else {
+                    NERROR("NCC", "createSelectionNode(): expected %s}%s, found %s%c%s in %s%s%s", NTCOLOR(HIGHLIGHT), NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), currentChar, NTCOLOR(STREAM_DEFAULT), NTCOLOR(HIGHLIGHT), ruleBeginning, NTCOLOR(STREAM_DEFAULT));
+                }
+            }
             goto finish;
         }
     } while (True);
@@ -1648,10 +1744,8 @@ static NCC_Node* getNextNode(struct NCC* ncc, NCC_Node* parentNode, const char**
     switch (currentChar) {
         case   0: return 0;
         case '#': return createSelectionNode (ncc, parentNode, in_out_rule);
+        case '@':
         case '$': return createSubstituteNode(ncc, parentNode, in_out_rule);
-
-        // TODO: add '@' to create a non-pushing (silent) substitute node...
-
         case '*': return createAnythingNode  (     parentNode, in_out_rule);
         case '{': return createSubRuleNode   (ncc, parentNode, in_out_rule);
         case '^': return createRepeatNode    (     parentNode, in_out_rule);
@@ -1748,6 +1842,7 @@ static boolean matchRuleTree(
 #define NCC_MATCH_RULE_NAME "_NCC_match()_"
 struct NCC* NCC_initializeNCC(struct NCC* ncc) {
     ncc->extraData = 0;
+    ncc->silent = False;
     NVector.initialize(&ncc->rules            , 0, sizeof(NCC_Rule*));
     NVector.initialize(&ncc->parentStack      , 0, sizeof(NCC_Node*));
     NVector.initialize(&ncc->maxMatchRuleStack, 0, sizeof(const char*));
@@ -2022,6 +2117,7 @@ static inline void deleteASTNode(NCC_ASTNode* astNode, NCC_ASTNode_Data* astPare
 }
 
 void NCC_deleteASTNode(NCC_ASTNode_Data* node, NCC_ASTNode_Data* astParentNode) {
+    if (!node->node) return;
     deleteASTNode((NCC_ASTNode*) node->node, astParentNode);
 }
 

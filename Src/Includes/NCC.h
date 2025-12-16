@@ -12,15 +12,15 @@
 
 //
 // Usage:
-//   First, we construct our rules (language definition). Then we match, firing listeners to construct
-//   an AST as we proceed.
+//   First, we construct our rules (language definition). Then we match, firing listeners to
+//   construct an AST as we proceed.
 //     - Create node listener: Given the rule, construct your AST node and return it.
-//     - Delete node listener: The node created in the previous step is not final. It could be rolled back.
-//                             Be ready to do so if this listener is fired.
-//     - Match       listener: Once the node and its children are constructed, this is fired. At this point,
-//                             you may inspect the node and decide if you'll accept this match.
+//     - Delete node listener: The node created in the previous step is not final. It could
+//                             be rolled back. Be ready to do so if this listener is fired.
+//     - Match       listener: Once the node and its children are constructed, this is fired. At
+//                             this point, you may inspect the node and decide if you'll accept this
+//                             match.
 //
-
 //
 // Rule text is comprised of a sequence of nodes that define how text is matched. We have several
 // convenient node types that should make rules definition readable and convenient.
@@ -32,11 +32,13 @@
 //   Repeat:          ^*
 //   Sub-rule:        {ruleText}
 //   Substitute:      ${ruleName}
+//                    @{ruleName}
 //   Anything:        *
 //                    * followed by something
-//   Selection:       #{{rule1} {rule2} {rule3} ...etc}
-//                    #{{rule1} {rule2} {rule3} ...etc == {rule2} ...etc}
-//                    #{{rule1} {rule2} {rule3} ...etc != {rule2} ...etc}
+//   Selection:       #{ {rule1}  {rule2} {rule3} ...etc}
+//                    #{ {rule1}  {rule2} {rule3} ...etc == {rule2} ...etc}
+//                    #{ {rule1}  {rule2} {rule3} ...etc != {rule2} ...etc}
+//                    #{${rule1} @{rule2} {rule3} ...etc == {rule2} ...etc}
 //
 // Example rules:
 // ╔═══════════════╤════════════════╤═══════════════════════════════════════════════════════════╗
@@ -56,14 +58,9 @@
 // ╚═══════════════╧════════════════╧═══════════════════════════════════════════════════════════╝
 //
 // Reserved characters (must be escaped):
-//   \ | - ^ * { } $ #
+//   \ | - ^ * { } $ @ #
 // and spaces/tabs. Spaces/Tabs that are not escaped are ignored. Feel free to use them to make rules look cleaner.
 //
-// TODO: add @ to reserved characters?
-//        => Above.
-//        => NCC.isReserved()
-//        => NCC.getNextNode()
-
 // Details and limitations:
 // ========================
 // Left recursion:
@@ -207,6 +204,17 @@
 // This would also work, but choosing one operator over the other can make your rule much clearer
 // and easier to verify.
 //
+// @:
+// --
+// In Substitute and Selection nodes, '@' can be used to silence a node (and its tree) from calling
+// any listeners or creating any AST nodes. For example:
+//   whiteSpace  = {\\ |\\\t|\r|\n}^*
+//   declaration = ${dataType} @{whiteSpace} ${identifier} @{whiteSpace};
+// Whitespaces are going to be matched, they just won't appear in the AST tree. Nevertheless, if you
+// want them to appear, just use the regular '$' to reference them. This way you don't have to
+// create two rules with the exact same definition but different names, just so that one of them
+// creates nodes and the other doesn't.
+//
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // NCC
@@ -241,10 +249,14 @@ typedef struct NCC_Rule NCC_Rule;
 // We won't create a typedef for NCC. Maybe at some point we'll declare a global interface name NCC
 // with all NCC relevant method, like we did for NVector and NString.
 struct NCC {
-    void* extraData;
+    void* extraData;                  // User defined data. Can be handy, use for your own purposes.
+
     struct NVector rules;             // A vector of pointers to rules, not rules. This way, even if the vector expands, they still point to the original rules.
     struct NCC_Rule* matchRule;       // Necessary to allow rules being matched to appear in AST trees.
     struct NVector* astNodeStacks[NCC_AST_NODE_STACKS_COUNT]; // NCC_ASTNode_Data. To be able to discard nodes that are not needed.
+    boolean silent;                   // Set during matching if we encounter an "@". Indicates
+                                      // whether the current sub-tree being matched should create
+                                      // and push ASTs or not.
 
     // Error reporting,
     struct NVector parentStack;       // A vector of NCC_Node*. Used to keep track of the node-matching call-stack.

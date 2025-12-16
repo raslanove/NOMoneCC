@@ -322,6 +322,20 @@ void NMain() {
     NCC_destroyNCC(&ncc);
     NLOGI("", "");
 
+    // Silent rules test,
+    NCC_initializeNCC(&ncc);
+    NCC_addRule(&ncc, ruleData.set(&ruleData, ""                    , "{\\ |\\\t|\r|\n}^*"              )->setListeners(&ruleData, 0, 0, 0));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "letter"              , "a-z|A-Z|_"                       )->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "digit"               , "0-9"                             )->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "identifier"          , "${letter} {${letter}|${digit}}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    NCC_addRule(&ncc, ruleData.set(&ruleData, "identifierSkipDigits", "${letter} #{${letter} @{digit}}^*")->setListeners(&ruleData, NCC_createASTNode, NCC_deleteASTNode, NCC_matchASTNode));
+    assert(&ncc, "SilentSubstituteTest", "${identifier} ${} @{identifier} ${} ${identifier}", "var1 var2 var3", True, 14, True);
+    assert(&ncc, "SilentSelectionTest", "${identifierSkipDigits}", "I_love_123_Abc", True, 14, True);
+    destroyDeclaredVariables();
+    NCC_destroyNCC(&ncc);
+    NLOGI("", "");
+
+    // Clean up,
     NVector.destroy(&declaredVariables);
     NCC_destroyRuleData(&ruleData);
      
